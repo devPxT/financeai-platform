@@ -1,3 +1,4 @@
+// src/components/Header.jsx
 import React from "react";
 import { UserButton, SignedIn, SignedOut, SignInButton } from "@clerk/clerk-react";
 

@@ -1,20 +1,26 @@
+// src/components/Transactions.jsx
 import React, { useEffect, useState } from "react";
-import { bffFetch } from "../utils/api";
+import { useBff } from "../utils/api";
 
 export default function Transactions() {
+  const api = useBff();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ type: "expense", category: "", amount: "" });
 
-  useEffect(() => { fetchList(); }, []);
+  useEffect(() => {
+    fetchList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function fetchList() {
     setLoading(true);
     try {
-      const r = await bffFetch("/bff/transactions");
+      const r = await api.get("/bff/transactions");
       setList(r || []);
     } catch (err) {
-      console.error(err);
+      console.error("fetchList error", err);
+      setList([]);
     } finally {
       setLoading(false);
     }
@@ -23,11 +29,11 @@ export default function Transactions() {
   async function create(mode = "sync") {
     const payload = { ...form, amount: Number(form.amount) || 0 };
     try {
-      await bffFetch(`/bff/transactions?mode=${mode}`, { method: "POST", body: JSON.stringify(payload) });
+      await api.post(`/bff/transactions?mode=${mode}`, payload);
       setForm({ type: "expense", category: "", amount: "" });
       fetchList();
     } catch (err) {
-      alert("Erro ao criar: " + err.message);
+      alert("Erro ao criar: " + (err.message || String(err)));
     }
   }
 
@@ -62,7 +68,7 @@ export default function Transactions() {
           <ul>
             {list.map((t) => (
               <li key={t._id || t.id || Math.random()}>
-                {new Date(t.date).toLocaleDateString()} — {t.category} — {t.type} — R$ {Number(t.amount).toFixed(2)}
+                {t.date ? new Date(t.date).toLocaleDateString() : "—"} — {t.category} — {t.type} — R$ {Number(t.amount || 0).toFixed(2)}
               </li>
             ))}
           </ul>

@@ -1,7 +1,9 @@
+// src/components/ReportPanel.jsx
 import React, { useState } from "react";
-import { bffFetch } from "../utils/api";
+import { useBff } from "../utils/api";
 
 export default function ReportPanel() {
+  const api = useBff();
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
 
@@ -9,10 +11,10 @@ export default function ReportPanel() {
     setLoading(true);
     setReport(null);
     try {
-      const r = await bffFetch("/bff/report", { method: "POST", body: JSON.stringify({}) });
+      const r = await api.post("/bff/report", {}); // body optional
       setReport(r.report || JSON.stringify(r, null, 2));
     } catch (err) {
-      setReport("Erro: " + err.message);
+      setReport("Erro: " + (err.message || String(err)));
     } finally {
       setLoading(false);
     }
