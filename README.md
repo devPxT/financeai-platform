@@ -293,5 +293,3 @@ cd ../functions && func start
 * Ricardo Amaro
 
 ---
-
-Se quiser, eu já gero um `README.md` pronto para colar no repositório (este documento é o conteúdo recomendado). Posso também criar exemplos de GitHub Actions para CI/CD, ou ajustar o README para uma versão curta para apresentação — prefere que eu gere o arquivo final para você baixar/copiar agora?
