@@ -1,7 +1,18 @@
-FROM node:20-alpine
+# transactions-service/Dockerfile
+FROM node:18-alpine
+
 WORKDIR /app
+
+# Copiar dependências
 COPY package*.json ./
-RUN npm ci --production
+
+RUN npm ci --only=production
+
+# Copiar código
 COPY . .
+
+# Expor a porta do serviço
 EXPOSE 4100
-CMD ["node","index.js"]
+
+# Rodar o serviço
+CMD ["node", "index.js"]

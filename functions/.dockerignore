@@ -1,0 +1,8 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.vscode
+local.settings.json
+.env
+!.env.example

@@ -1,7 +1,14 @@
-FROM node:20
+# analytics-service/Dockerfile
+FROM node:18-alpine
+
 WORKDIR /app
+
 COPY package*.json ./
-RUN npm ci --production
+
+RUN npm ci --only=production
+
 COPY . .
+
 EXPOSE 4200
-CMD ["node","index.js"]
+
+CMD ["node", "index.js"]

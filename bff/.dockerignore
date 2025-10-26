@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log
+.DS_Store
+.git
+.gitignore
+.vscode
+dist
+
+# Ignorar o .env real
+.env
+
+# ⚡ Mas NÃO ignorar o .env.example
+!.env.example
