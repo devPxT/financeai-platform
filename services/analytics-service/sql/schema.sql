@@ -1,0 +1,10 @@
+CREATE TABLE dbo.Transactions (
+  id VARCHAR(50) PRIMARY KEY,
+  userId VARCHAR(100) NOT NULL,
+  type VARCHAR(10) NOT NULL,
+  category VARCHAR(100),
+  amount DECIMAL(18,2),
+  date DATETIME2,
+  note NVARCHAR(400),
+  createdAt DATETIME2 DEFAULT SYSUTCDATETIME()
+);
