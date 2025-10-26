@@ -1,5 +1,8 @@
 # dependencies
-/node_modules
+node_modules/
 
 # env files (can opt-in for commiting if needed)
 .env*
+
+# exception to commit the example file
+!.env.example
