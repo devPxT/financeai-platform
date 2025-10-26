@@ -1,0 +1,12 @@
+{
+  "name": "financeai-functions",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "start": "func start"
+  },
+  "dependencies": {
+    "node-fetch": "^2.6.1",
+    "dotenv": "^16.0.0"
+  }
+}

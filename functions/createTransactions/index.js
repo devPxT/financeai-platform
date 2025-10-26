@@ -1,30 +1,27 @@
-// functions/createTransaction/index.js
-import fetch from "node-fetch";
-import dotenv from "dotenv";
-dotenv.config();
+const fetch = require("node-fetch");
+require("dotenv").config();
 
-export default async function (context, req) {
-  context.log("createTransaction invoked");
+module.exports = async function (context, req) {
+  context.log("createTransaction function invoked");
+
   const payload = req.body || {};
-  // Simple validation
-  if (!payload.userId || !payload.type || !payload.amount) {
-    context.res = { status: 400, body: { error: "missing_fields" } };
+  if (!payload.userId || !payload.type || payload.amount === undefined) {
+    context.res = { status: 400, body: { error: "missing_fields (userId, type, amount required)" } };
     return;
   }
 
   try {
-    // Forward to transactions-service (could use direct DB if desired)
-    const txServiceUrl = (process.env.TRANSACTIONS_SERVICE_URL || "http://localhost:4100") + "/transactions";
+    const txServiceUrl = (process.env.TRANSACTIONS_SERVICE_URL || "http://localhost:4100").replace(/\/$/, "") + "/transactions";
     const r = await fetch(txServiceUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
-    const json = await r.json();
-    // Optionally return 202 Accepted if you want async
-    context.res = { status: r.status, body: json };
+
+    const json = await r.json().catch(()=>({}));
+    context.res = { status: r.status || 200, body: json };
   } catch (err) {
-    context.log.error(err);
+    context.log.error("createTransaction error", err);
     context.res = { status: 500, body: { error: err.message } };
   }
-}
+};

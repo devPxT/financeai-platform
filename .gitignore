@@ -6,3 +6,5 @@ node_modules/
 
 # exception to commit the example file
 !.env.example
+
+local.settings.json

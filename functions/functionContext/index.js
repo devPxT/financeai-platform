@@ -1,11 +1,7 @@
-// functions/functionContext/index.js
-import dotenv from "dotenv";
-dotenv.config();
+require("dotenv").config();
 
-export default async function (context, req) {
-  const userId = req.query.userId || (req.body && req.body.userId) || "demo";
-  // Simple contextual data: forecast or external payments mock
-  // In production replace with real logic (bank connectors, forecasting)
+module.exports = async function (context, req) {
+  const userId = (req.query.userId || (req.body && req.body.userId) || "demo");
   const data = {
     userId,
     forecast: {
@@ -18,4 +14,4 @@ export default async function (context, req) {
     externalPayments: []
   };
   context.res = { status: 200, body: data };
-}
+};
