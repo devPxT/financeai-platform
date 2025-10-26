@@ -1,67 +1,102 @@
-version: "3.8"
+version: "3.9"
+
 services:
+  # 🗃️ Banco MongoDB
   mongo:
     image: mongo:6
     container_name: financeai-mongo
     restart: unless-stopped
-    ports: ["27017:27017"]
+    ports:
+      - "27017:27017"
     volumes:
       - mongo-data:/data/db
 
+  # 🧠 Banco SQL Server (Azure SQL em ambiente local)
   mssql:
     image: mcr.microsoft.com/mssql/server:2019-latest
     container_name: financeai-mssql
     environment:
       SA_PASSWORD: "Your_password123"
       ACCEPT_EULA: "Y"
-    ports: ["1433:1433"]
+    ports:
+      - "1433:1433"
 
+  # 💰 Transactions Service (MongoDB Atlas ou local)
   transactions:
     build: ./services/transactions-service
-    container_name: transactions-service
+    container_name: financeai-transactions
+    restart: unless-stopped
     environment:
+      - PORT=4100
+      - NODE_ENV=production
       - MONGO_URI=mongodb://mongo:27017/financeai_transactions
       - INTERNAL_SECRET=change-me-in-prod
-    ports: ["4100:4100"]
-    depends_on: ["mongo"]
+    ports:
+      - "4100:4100"
+    depends_on:
+      - mongo
 
+  # 📈 Analytics Service (SQL Server)
   analytics:
     build: ./services/analytics-service
-    container_name: analytics-service
+    container_name: financeai-analytics
+    restart: unless-stopped
     environment:
+      - PORT=4200
+      - NODE_ENV=production
       - AZURE_SQL_SERVER=mssql
       - AZURE_SQL_DATABASE=financeai_analytics
       - AZURE_SQL_USER=sa
       - AZURE_SQL_PASSWORD=Your_password123
-    ports: ["4200:4200"]
-    depends_on: ["mssql"]
+    ports:
+      - "4200:4200"
+    depends_on:
+      - mssql
 
+  # ⚙️ Azure Functions mock (simula o ambiente Azure)
+  functions:
+    build: ./functions
+    container_name: financeai-functions
+    restart: unless-stopped
+    ports:
+      - "4300:80"  # Funções expostas na porta 4300 do host
+    environment:
+      - AzureWebJobsStorage=UseDevelopmentStorage=true
+      - FUNCTIONS_WORKER_RUNTIME=node
+
+  # 🧠 BFF (Node.js agregador)
   bff:
     build: ./bff
     container_name: financeai-bff
+    restart: unless-stopped
     environment:
+      - PORT=4000
+      - NODE_ENV=production
       - TRANSACTIONS_SERVICE_URL=http://transactions:4100
       - ANALYTICS_SERVICE_URL=http://analytics:4200
-      - FUNCTION_TRIGGER_URL=http://functionsmock:4300
+      - FUNCTION_TRIGGER_URL=http://functions:80
       - MOCK_AUTH=true
-    ports: ["4000:4000"]
-    depends_on: ["transactions","analytics"]
+    ports:
+      - "4000:4000"
+    depends_on:
+      - transactions
+      - analytics
+      - functions
 
-  functionsmock:
-    image: node:20
-    container_name: functionsmock
-    working_dir: /app
-    command: ["node","/app/mock-functions-server.js"]
-    volumes:
-      - ./functions:/app
-    ports: ["4300:4300"]
-
+  # 🖥️ MFE (Frontend React)
   mfe:
     build: ./mfe
     container_name: financeai-mfe
-    ports: ["3000:3000"]
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
     environment:
-      - VITE_BFF_URL=http://localhost:4000
+      - VITE_BFF_URL=http://bff:4000
+      - VITE_CLERK_PUBLISHABLE_KEY=pk_test_xxx
+      - VITE_STRIPE_PUBLISHABLE_KEY=pk_test_xxx
+      - VITE_DEMO_USER_TOKEN=demo
+    depends_on:
+      - bff
 
 volumes:
   mongo-data:
