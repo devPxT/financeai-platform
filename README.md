@@ -6,6 +6,13 @@
 
 ---
 
+## GitHub e Docker
+
+* https://github.com/devPxT/financeai-platform
+* https://hub.docker.com/repositories/devpxt
+
+---
+
 ## Estrutura do repositório
 
 ```
