@@ -9,8 +9,7 @@ export default function MyPlan() {
   async function gotoCheckout() {
     setLoading(true);
     try {
-      const priceId = "price_YOUR_PRICE_ID"; // <-- substitua pelo seu Price ID
-      const res = await api.post("/bff/create-checkout-session", { priceId });
+      const res = await api.post("/bff/create-checkout-session", {  });
       if (!res.url) throw new Error("Checkout session failed");
       window.location.href = res.url;
     } catch (err) {

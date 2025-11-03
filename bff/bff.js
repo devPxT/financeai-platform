@@ -46,6 +46,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
 
+const STRIPE_PRICE_ID_PRO = process.env.STRIPE_PRICE_ID_PRO || "price_YOUR_PRICE_ID";
+
 const HTTP_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS || 8000);
 const RETRY_COUNT = Number(process.env.RETRY_COUNT || 2);
 const CACHE_TTL = Number(process.env.CACHE_TTL || 25);
@@ -297,16 +299,17 @@ app.get("/bff/combined-kpi", authMiddleware, async (req, res) => {
 /* STRIPE: create checkout session (server-side) */
 app.post("/bff/create-checkout-session", authMiddleware, async (req, res) => {
   try {
-    const { priceId, successUrl, cancelUrl } = req.body;
-    if (!priceId) return res.status(400).json({ error: "priceId required" });
+    const { successUrl, cancelUrl } = req.body;
+    if (!STRIPE_PRICE_ID_PRO) return res.status(400).json({ error: "priceId required" });
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
-      line_items: [{ price: priceId, quantity: 1 }],
-      customer_email: req.user?.email,
+      line_items: [{ price: STRIPE_PRICE_ID_PRO, quantity: 1 }],
+      // customer_email: req.user?.email,
+      customer_email: "gabrielkauasantos11@gmail.com",
       success_url: successUrl || `${req.headers.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: cancelUrl || `${req.headers.origin}/cancel`
+      cancel_url: cancelUrl || `${req.headers.origin}/home`
     });
 
     res.json({ url: session.url, id: session.id });
