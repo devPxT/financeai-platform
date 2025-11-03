@@ -1,30 +1,33 @@
 import React from "react";
-import Home from "./pages/Home";
+import { Routes, Route, Navigate } from "react-router-dom";
+import Login from "./pages/Login.jsx";
+import Home from "./pages/Home.jsx";
+import Transactions from "./components/Transactions.jsx";
+import MyPlan from "./components/MyPlan.jsx";
+import ProtectedRoute from "./routes/ProtectedRoute.jsx";
+import AuthLayout from "./layouts/AuthLayout.jsx";
 
 export default function App() {
-  return <Home />;
+  return (
+    <Routes>
+      {/* "/" é a página de Login */}
+      <Route path="/" element={<Login />} />
+
+      {/* Rotas autenticadas com Navbar */}
+      <Route
+        element={
+          <ProtectedRoute>
+            <AuthLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/home" element={<Home />} />
+        <Route path="/transactions" element={<Transactions />} />
+        <Route path="/subscription" element={<MyPlan />} />
+      </Route>
+
+      {/* fallback */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
 }
-
-
-// import React from "react";
-// import { Routes, Route } from "react-router-dom";
-// import Home from "./pages/Home";
-// import { UserButton, SignedIn, SignedOut } from "@clerk/clerk-react";
-
-// export default function App() {
-//   return (
-//     <div className="app-root">
-//       <SignedIn>
-//         <Routes>
-//           <Route path="/" element={<Home />} />
-//         </Routes>
-//       </SignedIn>
-
-//       <SignedOut>
-//         <Routes>
-//           <Route path="/" element={<Home />} />
-//         </Routes>
-//       </SignedOut>
-//     </div>
-//   );
-// }
