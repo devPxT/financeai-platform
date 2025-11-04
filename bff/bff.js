@@ -48,6 +48,7 @@ const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
 
 const STRIPE_PRICE_ID_PRO = process.env.STRIPE_PRICE_ID_PRO || "price_YOUR_PRICE_ID";
+const FUNCTION_CODE = process.env.FUNCTION_CODE || "";
 
 const HTTP_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS || 8000);
 const RETRY_COUNT = Number(process.env.RETRY_COUNT || 2);
@@ -89,6 +90,15 @@ async function httpRequestWithRetry(config, retries = RETRY_COUNT) {
     }
   }
   throw lastErr;
+}
+
+/**
+ * Derive userId from decoded token.
+ * Prefers sub, then id, then userId, then email prefix.
+ */
+function deriveUserId(user) {
+  if (!user) return undefined;
+  return user.sub || user.id || user.userId || (typeof user.email === "string" ? user.email.split("@")[0] : undefined);
 }
 
 /* ----------------- Auth middleware ----------------- */
@@ -168,7 +178,9 @@ app.get("/bff/whoami", authMiddleware, (req, res) => {
 app.get("/bff/aggregate", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
-    const userId = req.query.userId || (user && (user.id || user.sub || user.email?.split?.[0]));
+    // In production (MOCK_AUTH=false), derive userId from token only
+    // In dev (MOCK_AUTH=true), allow query override for testing
+    const userId = MOCK_AUTH ? (req.query.userId || deriveUserId(user)) : deriveUserId(user);
     const cacheKey = `aggregate:${userId || "anon"}`;
     const cached = cache.get(cacheKey);
     if (cached) {
@@ -206,7 +218,9 @@ app.get("/bff/aggregate", authMiddleware, async (req, res) => {
 /* TRANSACTIONS proxy endpoints (CRUD) */
 app.get("/bff/transactions", authMiddleware, async (req, res) => {
   try {
-    const userId = req.query.userId || req.user?.id;
+    // In production (MOCK_AUTH=false), derive userId from token only
+    // In dev (MOCK_AUTH=true), allow query override for testing
+    const userId = MOCK_AUTH ? (req.query.userId || deriveUserId(req.user)) : deriveUserId(req.user);
     const url = `${TRANSACTIONS_SERVICE_URL}/transactions`;
     const data = await proxyGet(url, { userId });
     res.json(data);
@@ -219,11 +233,21 @@ app.get("/bff/transactions", authMiddleware, async (req, res) => {
 app.post("/bff/transactions", authMiddleware, async (req, res) => {
   const mode = (req.query.mode || "sync").toLowerCase();
   const payload = { ...(req.body || {}) };
-  payload.userId = req.user?.id || payload.userId;
+  
+  // Derive userId from token
+  const userId = deriveUserId(req.user);
+  if (!userId && !MOCK_AUTH) {
+    return res.status(400).json({ error: "missing_userId", details: "userId could not be derived from token" });
+  }
+  
+  // Inject userId into payload
+  payload.userId = userId || payload.userId;
+  
   try {
     if (mode === "async") {
-      // forward to function trigger (createTransaction endpoint)
-      const funcUrl = `${FUNCTION_TRIGGER_URL}/createTransaction`;
+      // Forward to function trigger (createTransactions endpoint - plural)
+      const codeSuffix = FUNCTION_CODE ? `?code=${FUNCTION_CODE}` : "";
+      const funcUrl = `${FUNCTION_TRIGGER_URL.replace(/\/$/, "")}/createTransactions${codeSuffix}`;
       try {
         const r = await httpRequestWithRetry({ method: "post", url: funcUrl, data: payload, headers: { "x-origin-bff": "financeai-bff" } });
         // function may return 202 Accepted
@@ -254,7 +278,13 @@ app.put("/bff/transactions/:id", authMiddleware, async (req, res) => {
     const id = req.params.id;
     const url = `${TRANSACTIONS_SERVICE_URL}/transactions/${encodeURIComponent(id)}`;
     const updated = await proxyPut(url, req.body);
-    invalidateAllAggregateCache();
+    // Invalidate cache using derived userId
+    const userId = deriveUserId(req.user);
+    if (userId) {
+      invalidateUserCache(userId);
+    } else {
+      invalidateAllAggregateCache();
+    }
     res.json(updated);
   } catch (err) {
     logger.error("update_transaction_failed", { err: err.message });
@@ -267,7 +297,13 @@ app.delete("/bff/transactions/:id", authMiddleware, async (req, res) => {
     const id = req.params.id;
     const url = `${TRANSACTIONS_SERVICE_URL}/transactions/${encodeURIComponent(id)}`;
     const deleted = await proxyDelete(url);
-    invalidateAllAggregateCache();
+    // Invalidate cache using derived userId
+    const userId = deriveUserId(req.user);
+    if (userId) {
+      invalidateUserCache(userId);
+    } else {
+      invalidateAllAggregateCache();
+    }
     res.json({ ok: true, deleted });
   } catch (err) {
     logger.error("delete_transaction_failed", { err: err.message });
@@ -278,7 +314,9 @@ app.delete("/bff/transactions/:id", authMiddleware, async (req, res) => {
 /* COMBINED KPIs: call transactions summary + analytics service KPIs */
 app.get("/bff/combined-kpi", authMiddleware, async (req, res) => {
   try {
-    const userId = req.query.userId || req.user?.id;
+    // In production (MOCK_AUTH=false), derive userId from token only
+    // In dev (MOCK_AUTH=true), allow query override for testing
+    const userId = MOCK_AUTH ? (req.query.userId || deriveUserId(req.user)) : deriveUserId(req.user);
     const txSummaryUrl = `${TRANSACTIONS_SERVICE_URL}/summary?userId=${encodeURIComponent(userId || "")}`;
     const analyticsUrl = `${ANALYTICS_SERVICE_URL}/kpis?userId=${encodeURIComponent(userId || "")}`;
 
@@ -360,7 +398,7 @@ app.post("/bff/stripe-webhook", bodyParser.raw({ type: "application/json" }), (r
 /* OPENAI REPORT: generate report using last transactions (proxy+openai) */
 app.post("/bff/report", authMiddleware, async (req, res) => {
   try {
-    const userId = req.user?.id || req.body.userId;
+    const userId = deriveUserId(req.user) || req.body.userId;
     // fetch last N transactions from transactions-service
     const txUrl = `${TRANSACTIONS_SERVICE_URL}/transactions`;
     const txs = await proxyGet(txUrl, { userId, limit: 200 }).catch(() => []);

@@ -61,6 +61,8 @@ STRIPE_WEBHOOK_SECRET=
 TRANSACTIONS_SERVICE_URL=http://localhost:4100
 ANALYTICS_SERVICE_URL=http://localhost:4200
 FUNCTION_TRIGGER_URL=http://localhost:4300
+FUNCTION_CONTEXT_TRIGGER_URL=http://localhost:4300
+FUNCTION_CODE=
 INTERNAL_SECRET=change-me-in-prod
 HTTP_TIMEOUT_MS=8000
 RETRY_COUNT=2
@@ -69,6 +71,7 @@ CACHE_TTL=25
 
 * Em **dev** você pode manter `MOCK_AUTH=true` (aceita token `demo`).
 * Em **produção** definir `MOCK_AUTH=false` e configurar `CLERK_JWKS_URI` e `CLERK_AUDIENCE` (valores fornecidos pelo Clerk).
+* `FUNCTION_CODE` é opcional e usado para adicionar `?code=...` nas chamadas para Azure Functions que requerem autenticação.
 * **Não** coloque chaves reais no Git; use GitHub Secrets / Azure Key Vault em deploy.
 
 ## 1.2 Transactions Service — `/services/transactions-service/.env`
@@ -120,9 +123,12 @@ VITE_BFF_URL=http://localhost:4000
 VITE_CLERK_PUBLISHABLE_KEY=
 VITE_STRIPE_PUBLISHABLE_KEY=
 VITE_DEMO_USER_TOKEN=demo
+VITE_USE_DEMO_AUTH=false
 ```
 
 * `VITE_DEMO_USER_TOKEN=demo` permite usar o BFF em modo mock sem Clerk.
+* `VITE_USE_DEMO_AUTH=true` habilita o fallback para o token demo em desenvolvimento local. **Recomendado apenas para dev**.
+* `VITE_USE_DEMO_AUTH=false` (padrão) requer um token Clerk válido e lançará um erro se não estiver disponível, forçando o login.
 
 ---
 
@@ -213,16 +219,71 @@ curl -H "Authorization: Bearer demo" http://localhost:4000/bff/aggregate
 
 # 5) Autenticação (Clerk) e fluxos com Stripe / OpenAI
 
-**Dev rápido (modo mock)**
+## 5.1 Authentication Flow
 
-* Mantenha `bff/.env: MOCK_AUTH=true` e `mfe/.env: VITE_DEMO_USER_TOKEN=demo`.
-* O frontend usará `demo` como token e o BFF aceitará esse token.
+The platform supports two authentication modes:
 
-**Produção (recomendado)**
+### Development Mode (MOCK_AUTH=true)
+* Configure `bff/.env: MOCK_AUTH=true` and `mfe/.env: VITE_USE_DEMO_AUTH=true`
+* The BFF accepts simple mock tokens like `demo`, `user:alice`, or email-based tokens
+* The MFE will use the demo token for all requests
+* **Use this mode only for local development and testing**
 
-1. Crie app no Clerk, copie JWKS URI / Audience.
-2. No `bff/.env` coloque `MOCK_AUTH=false`, `CLERK_JWKS_URI=...` e `CLERK_AUDIENCE=...`.
-3. No MFE configure `VITE_CLERK_PUBLISHABLE_KEY` e use os componentes Clerk para login.
+### Production Mode (MOCK_AUTH=false) - **Recommended**
+* Configure Clerk app and obtain JWKS URI and Audience
+* In `bff/.env` set:
+  * `MOCK_AUTH=false`
+  * `CLERK_JWKS_URI=https://your-clerk-domain/.well-known/jwks.json`
+  * `CLERK_AUDIENCE=your-audience` (optional, but recommended)
+* In `mfe/.env` set:
+  * `VITE_CLERK_PUBLISHABLE_KEY=pk_test_...`
+  * `VITE_USE_DEMO_AUTH=false` (or omit it - false is the default)
+* Users must log in via Clerk to access the application
+* The BFF validates JWT tokens using Clerk's JWKS endpoint
+
+## 5.2 How userId is Derived and Propagated
+
+The BFF uses a `deriveUserId` helper that extracts the user identifier from the decoded JWT token with the following priority:
+1. `sub` claim (Clerk standard)
+2. `id` claim
+3. `userId` claim
+4. Email prefix (if email is present)
+
+**Where userId comes from in different flows:**
+
+| Endpoint | Source | Notes |
+|----------|--------|-------|
+| **Header** | `Authorization: Bearer <JWT>` | Decoded in BFF auth middleware, attached to `req.user` |
+| **Derived** | `deriveUserId(req.user)` | Extracted from token claims (sub/id/userId/email) |
+| **Query** | BFF → Analytics `/kpis?userId=...` | BFF forwards derived userId to analytics service |
+| **Payload** | BFF → Transactions POST `/transactions` | BFF injects derived userId into request payload |
+| **Payload** | BFF → Function `/createTransactions` | BFF injects derived userId into async function call |
+
+**When MOCK_AUTH=false (production):**
+- `/bff/aggregate`: derives userId from token only, ignores query params
+- `/bff/combined-kpi`: derives userId from token only, ignores query params
+- `/bff/transactions` (GET): derives userId from token only, ignores query params
+- `/bff/transactions` (POST): injects userId from token into payload; returns 400 if missing
+- `/bff/transactions/:id` (PUT/DELETE): uses derived userId for cache invalidation
+
+**When MOCK_AUTH=true (development):**
+- Allows query parameter overrides for testing different users
+- Still derives from token as fallback
+
+## 5.3 MFE Authentication Behavior
+
+The MFE's `useBff()` hook now enforces proper authentication:
+
+* **Default (VITE_USE_DEMO_AUTH=false or not set):** Requires a valid Clerk token. If not available, throws an error prompting the user to log in.
+* **Dev Mode (VITE_USE_DEMO_AUTH=true):** Falls back to DEMO_TOKEN if Clerk token is unavailable. This is opt-in and should only be used for local development.
+
+## 5.4 Azure Function Access
+
+The BFF can optionally append a function access code when calling Azure Functions:
+
+* Set `FUNCTION_CODE` in `bff/.env` if your Azure Function requires authentication
+* The BFF will append `?code=<FUNCTION_CODE>` to function URLs
+* Example: `POST /createTransactions?code=abc123`
 
 **Stripe**
 
