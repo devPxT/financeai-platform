@@ -43,6 +43,8 @@ const ANALYTICS_SERVICE_URL = (process.env.ANALYTICS_SERVICE_URL || "http://loca
 const FUNCTION_TRIGGER_URL = (process.env.FUNCTION_TRIGGER_URL || "http://localhost:4300").replace(/\/$/, "");
 const FUNCTION_CONTEXT_TRIGGER_URL = (process.env.FUNCTION_CONTEXT_TRIGGER_URL || "http://localhost:4300").replace(/\/$/, "");
 
+const FUNCTION_CODE = process.env.FUNCTION_CODE || "";
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || "";
@@ -89,6 +91,17 @@ async function httpRequestWithRetry(config, retries = RETRY_COUNT) {
     }
   }
   throw lastErr;
+}
+
+/* Helper: deriva userId do token do Clerk */
+function deriveUserId(u) {
+  if (!u) return undefined;
+  return (
+    u.id ||              // alguns providers mapeiam para id
+    u.sub ||             // padrão em OIDC/JWT do Clerk
+    u.userId ||          // alternativa em alguns templates
+    (typeof u.email === "string" ? u.email.split("@")[0] : undefined)
+  );
 }
 
 /* ----------------- Auth middleware ----------------- */
@@ -165,29 +178,35 @@ app.get("/bff/whoami", authMiddleware, (req, res) => {
 });
 
 /* AGGREGATE: combine transactions (microservice) + function (http trigger) */
+/* AGGREGATE */
 app.get("/bff/aggregate", authMiddleware, async (req, res) => {
   try {
     const user = req.user;
-    const userId = req.query.userId || (user && (user.id || user.sub || user.email?.split?.[0]));
-    const cacheKey = `aggregate:${userId || "anon"}`;
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      return res.json({ fromCache: true, ...cached });
+    const tokenUserId = deriveUserId(user);
+
+    let userId;
+    if (MOCK_AUTH) {
+      // Em dev, ainda aceitamos override por query se quiser inspecionar outro usuário
+      userId = req.query.userId || tokenUserId;
+    } else {
+      // Em produção, sempre força o userId do token
+      userId = tokenUserId;
     }
 
-    // call transactions service
-    const txUrl = `${TRANSACTIONS_SERVICE_URL}/transactions`;
-    const txPromise = proxyGet(txUrl, { userId }).catch((e) => {
-      logger.warn("tx_service_unavailable", { err: e?.message });
-      return [];
-    });
+    if (!userId) return res.status(401).json({ error: "missing_user_id_from_token" });
 
-    // call function HTTP trigger (GET)
+    const cacheKey = `aggregate:${userId}`;
+    const cached = cache.get(cacheKey);
+    if (cached) return res.json({ fromCache: true, ...cached });
+
+    const txUrl = `${TRANSACTIONS_SERVICE_URL}/transactions`;
+    const txPromise = proxyGet(txUrl, { userId }).catch(() => []);
+
+    // const funcUrl = `${FUNCTION_TRIGGER_URL.replace(/\/$/, "")}/functionContext?userId=${encodeURIComponent(userId)}`;
     const funcUrl = `${FUNCTION_CONTEXT_TRIGGER_URL}?userId=${encodeURIComponent(userId || "")}`;
-    const funcPromise = httpRequestWithRetry({ method: "get", url: funcUrl }).then((r) => r.data).catch((e) => {
-      logger.warn("function_unavailable", { err: e?.message });
-      return null;
-    });
+    const funcPromise = httpRequestWithRetry({ method: "get", url: funcUrl })
+      .then((r) => r.data)
+      .catch(() => null);
 
     const [transactions, functionData] = await Promise.all([txPromise, funcPromise]);
 
@@ -203,10 +222,13 @@ app.get("/bff/aggregate", authMiddleware, async (req, res) => {
   }
 });
 
-/* TRANSACTIONS proxy endpoints (CRUD) */
+/* TRANSACTIONS - LIST */
 app.get("/bff/transactions", authMiddleware, async (req, res) => {
   try {
-    const userId = req.query.userId || req.user?.id;
+    const tokenUserId = deriveUserId(req.user);
+    const userId = MOCK_AUTH ? (req.query.userId || tokenUserId) : tokenUserId;
+    if (!userId) return res.status(401).json({ error: "missing_user_id_from_token" });
+
     const url = `${TRANSACTIONS_SERVICE_URL}/transactions`;
     const data = await proxyGet(url, { userId });
     res.json(data);
@@ -216,31 +238,41 @@ app.get("/bff/transactions", authMiddleware, async (req, res) => {
   }
 });
 
+/* TRANSACTIONS - CREATE (sync/async) */
 app.post("/bff/transactions", authMiddleware, async (req, res) => {
   const mode = (req.query.mode || "sync").toLowerCase();
-  const payload = { ...(req.body || {}) };
-  payload.userId = req.user?.id || payload.userId;
+  const tokenUserId = deriveUserId(req.user);
+
+  // Em produção, SEMPRE userId do token; em dev, aceita override mas prioriza token se existir
+  const userId = MOCK_AUTH ? (tokenUserId || req.body?.userId) : tokenUserId;
+  if (!userId) return res.status(400).json({ error: "missing_user_id_from_token" });
+
+  const payload = { ...(req.body || {}), userId };
+
   try {
     if (mode === "async") {
-      // forward to function trigger (createTransaction endpoint)
-      const funcUrl = `${FUNCTION_TRIGGER_URL}/createTransaction`;
+      const codeSuffix = FUNCTION_CODE ? `?code=${encodeURIComponent(FUNCTION_CODE)}` : "";
+      const funcUrl = `${FUNCTION_TRIGGER_URL.replace(/\/$/, "")}/createTransactions${codeSuffix}`;
       try {
-        const r = await httpRequestWithRetry({ method: "post", url: funcUrl, data: payload, headers: { "x-origin-bff": "financeai-bff" } });
-        // function may return 202 Accepted
+        const r = await httpRequestWithRetry({
+          method: "post",
+          url: funcUrl,
+          data: payload,
+          headers: { "x-origin-bff": "financeai-bff" }
+        });
         return res.status(r.status === 202 ? 202 : 201).json({ fromFunction: true, data: r.data });
       } catch (err) {
         logger.warn("function_create_failed", { err: err.message });
-        // fallback: try direct create on transactions-service
-        const svcUrl = `${TRANSACTIONS_SERVICE_URL}/transactions`;
+        // fallback direto no serviço
+        const svcUrl = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions`;
         const created = await proxyPost(svcUrl, payload);
-        invalidateUserCache(payload.userId);
+        invalidateUserCache(userId);
         return res.status(201).json({ fallback: true, created });
       }
     } else {
-      // sync -> direct to transactions service
-      const svcUrl = `${TRANSACTIONS_SERVICE_URL}/transactions`;
+      const svcUrl = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions`;
       const created = await proxyPost(svcUrl, payload);
-      invalidateUserCache(payload.userId);
+      invalidateUserCache(userId);
       return res.status(201).json(created);
     }
   } catch (err) {
@@ -261,14 +293,31 @@ app.put("/bff/transactions/:id", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "update_transaction_failed" });
   }
 });
+/* TRANSACTIONS - UPDATE: continuam, invalidando cache pelo userId derivado */
+app.put("/bff/transactions/:id", authMiddleware, async (req, res) => {
+  try {
+    const tokenUserId = deriveUserId(req.user);
+    if (!tokenUserId && !MOCK_AUTH) return res.status(401).json({ error: "missing_user_id_from_token" });
+    const url = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions/${encodeURIComponent(req.params.id)}`;
+    const updated = await proxyPut(url, req.body);
+    // invalidateAllAggregateCache();
+    invalidateUserCache(tokenUserId);
+    res.json(updated);
+  } catch (err) {
+    logger.error("update_transaction_failed", { err: err.message });
+    res.status(500).json({ error: "update_transaction_failed" });
+  }
+});
 
+/* TRANSACTIONS - DELETE: continuam, invalidando cache pelo userId derivado */
 app.delete("/bff/transactions/:id", authMiddleware, async (req, res) => {
   try {
-    const id = req.params.id;
-    const url = `${TRANSACTIONS_SERVICE_URL}/transactions/${encodeURIComponent(id)}`;
-    const deleted = await proxyDelete(url);
-    invalidateAllAggregateCache();
-    res.json({ ok: true, deleted });
+    const tokenUserId = deriveUserId(req.user);
+    if (!tokenUserId && !MOCK_AUTH) return res.status(401).json({ error: "missing_user_id_from_token" });
+    const url = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions/${encodeURIComponent(req.params.id)}`;
+    const out = await proxyDelete(url);
+    invalidateUserCache(tokenUserId);
+    res.json(out);
   } catch (err) {
     logger.error("delete_transaction_failed", { err: err.message });
     res.status(500).json({ error: "delete_transaction_failed" });
@@ -276,24 +325,21 @@ app.delete("/bff/transactions/:id", authMiddleware, async (req, res) => {
 });
 
 /* COMBINED KPIs: call transactions summary + analytics service KPIs */
+/* COMBINED-KPI (se existir a sua rota de KPI combinado; aplica a mesma regra de userId) */
 app.get("/bff/combined-kpi", authMiddleware, async (req, res) => {
   try {
-    const userId = req.query.userId || req.user?.id;
-    const txSummaryUrl = `${TRANSACTIONS_SERVICE_URL}/summary?userId=${encodeURIComponent(userId || "")}`;
-    const analyticsUrl = `${ANALYTICS_SERVICE_URL}/kpis?userId=${encodeURIComponent(userId || "")}`;
+    const tokenUserId = deriveUserId(req.user);
+    const userId = MOCK_AUTH ? (req.query.userId || tokenUserId) : tokenUserId;
+    if (!userId) return res.status(401).json({ error: "missing_user_id_from_token" });
 
-    const [txResp, analyticsResp] = await Promise.allSettled([
-      httpRequestWithRetry({ method: "get", url: txSummaryUrl }),
-      httpRequestWithRetry({ method: "get", url: analyticsUrl })
+    const kpisUrl = `${ANALYTICS_SERVICE_URL}/kpis`;
+    const [kpis] = await Promise.all([
+      proxyGet(kpisUrl, { userId }).catch(() => ({ error: "analytics_unavailable" }))
     ]);
 
-    const txSummary = txResp.status === "fulfilled" ? txResp.value.data : { error: "tx_error" };
-    const analytics = analyticsResp.status === "fulfilled" ? analyticsResp.value.data : { error: "analytics_error" };
-
-    res.json({ userId, txSummary, analytics });
+    res.json({ userId, kpis });
   } catch (err) {
-    logger.error("combined_kpi_error", { err: err.message });
-    res.status(500).json({ error: "combined_kpi_failed" });
+    res.status(500).json({ error: "combined_kpi_failed", details: err.message });
   }
 });
 

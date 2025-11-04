@@ -27,7 +27,7 @@ export default function Navbar() {
         </Link>
       </div>
       {/* DIREITA */}
-      <UserButton />
+      <UserButton showName />
     </nav>
   );
 }
