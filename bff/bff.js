@@ -27,6 +27,7 @@ import dotenv from "dotenv";
 import bodyParser from "body-parser";
 import winston from "winston";
 import crypto from "crypto";
+import buildCreateTransaction from "./src/usecases/createTransaction.js";
 
 dotenv.config();
 
@@ -220,28 +221,14 @@ app.post("/bff/transactions", authMiddleware, async (req, res) => {
   const payload = { ...(req.body || {}) };
   payload.userId = req.user?.id || payload.userId;
   try {
-    if (mode === "async") {
-      // forward to function trigger (createTransaction endpoint)
-      const funcUrl = `${FUNCTION_TRIGGER_URL}/createTransaction`;
-      try {
-        const r = await httpRequestWithRetry({ method: "post", url: funcUrl, data: payload, headers: { "x-origin-bff": "financeai-bff" } });
-        // function may return 202 Accepted
-        return res.status(r.status === 202 ? 202 : 201).json({ fromFunction: true, data: r.data });
-      } catch (err) {
-        logger.warn("function_create_failed", { err: err.message });
-        // fallback: try direct create on transactions-service
-        const svcUrl = `${TRANSACTIONS_SERVICE_URL}/transactions`;
-        const created = await proxyPost(svcUrl, payload);
-        invalidateUserCache(payload.userId);
-        return res.status(201).json({ fallback: true, created });
-      }
-    } else {
-      // sync -> direct to transactions service
-      const svcUrl = `${TRANSACTIONS_SERVICE_URL}/transactions`;
-      const created = await proxyPost(svcUrl, payload);
-      invalidateUserCache(payload.userId);
-      return res.status(201).json(created);
-    }
+    const createTx = buildCreateTransaction({
+      httpRequestWithRetry,
+      urls: { transactionsService: TRANSACTIONS_SERVICE_URL, functionTrigger: FUNCTION_TRIGGER_URL },
+      logger
+    });
+    const result = await createTx({ mode, payload });
+    invalidateUserCache(payload.userId);
+    return res.status(result.status).json(result.body);
   } catch (err) {
     logger.error("create_transaction_failed", { err: err.message });
     res.status(500).json({ error: "create_transaction_failed", details: err.message });
