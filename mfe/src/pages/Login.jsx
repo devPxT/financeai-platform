@@ -15,9 +15,9 @@ export default function Login() {
   }, [isLoaded, isSignedIn, navigate]);
 
   return (
-    <div className="grid md:grid-cols-2 min-h-screen bg-[#0B0B0D]">
+    <div className="grid md:grid-cols-2 h-screen overflow-hidden bg-[#0B0B0D]">
       {/* ESQUERDA */}
-      <div className="mx-auto flex h-full w-full max-w-[550px] flex-col justify-center align-items-center p-8">
+      <div className="mx-auto flex h-full w-full max-w-[550px] flex-col justify-center p-8">
         <img
           src="/images/logo.svg"
           width={173}
@@ -26,7 +26,7 @@ export default function Login() {
           className="mb-8"
         />
         <h1 className="mb-3 text-4xl font-bold text-white">Bem-vindo</h1>
-        <p className="mb-8 text-white">
+        <p className="mb-8 text-white text-center md:text-left">
           A Finance AI é uma plataforma de gestão financeira que utiliza IA para
           monitorar suas movimentações e oferecer insights personalizados,
           facilitando o controle do seu orçamento.
@@ -40,11 +40,11 @@ export default function Login() {
       </div>
 
       {/* DIREITA (imagem) */}
-      <div className="relative hidden h-full w-full md:block">
+      <div className="relative hidden h-full w-full md:block overflow-hidden">
         <img
           src="/images/login.png"
           alt="Faça login"
-          className="h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-cover object-center"
         />
       </div>
     </div>

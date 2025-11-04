@@ -16,10 +16,10 @@ export function useBff() {
   async function getAuthToken() {
     try {
       //JUST FOR DEV
-      const isDev = import.meta.env.MODE === "development";
-      if (isDev && DEMO_TOKEN) {
-        return DEMO_TOKEN;
-      }
+      // const isDev = import.meta.env.MODE === "development";
+      // if (isDev && DEMO_TOKEN) {
+      //   return DEMO_TOKEN;
+      // }
       //JUST FOR DEV
 
       if (typeof getToken === "function") {

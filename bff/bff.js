@@ -41,6 +41,7 @@ const CLERK_AUDIENCE = process.env.CLERK_AUDIENCE || "";
 const TRANSACTIONS_SERVICE_URL = (process.env.TRANSACTIONS_SERVICE_URL || "http://localhost:4100").replace(/\/$/, "");
 const ANALYTICS_SERVICE_URL = (process.env.ANALYTICS_SERVICE_URL || "http://localhost:4200").replace(/\/$/, "");
 const FUNCTION_TRIGGER_URL = (process.env.FUNCTION_TRIGGER_URL || "http://localhost:4300").replace(/\/$/, "");
+const FUNCTION_CONTEXT_TRIGGER_URL = (process.env.FUNCTION_CONTEXT_TRIGGER_URL || "http://localhost:4300").replace(/\/$/, "");
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || "";
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || "";
@@ -182,7 +183,7 @@ app.get("/bff/aggregate", authMiddleware, async (req, res) => {
     });
 
     // call function HTTP trigger (GET)
-    const funcUrl = `${FUNCTION_TRIGGER_URL}?userId=${encodeURIComponent(userId || "")}`;
+    const funcUrl = `${FUNCTION_CONTEXT_TRIGGER_URL}?userId=${encodeURIComponent(userId || "")}`;
     const funcPromise = httpRequestWithRetry({ method: "get", url: funcUrl }).then((r) => r.data).catch((e) => {
       logger.warn("function_unavailable", { err: e?.message });
       return null;
