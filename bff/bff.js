@@ -98,7 +98,13 @@ async function httpRequestWithRetry(config, retries = RETRY_COUNT) {
  */
 function deriveUserId(user) {
   if (!user) return undefined;
-  return user.sub || user.id || user.userId || (typeof user.email === "string" ? user.email.split("@")[0] : undefined);
+  if (user.sub) return user.sub;
+  if (user.id) return user.id;
+  if (user.userId) return user.userId;
+  if (typeof user.email === "string" && user.email.includes("@")) {
+    return user.email.split("@")[0];
+  }
+  return undefined;
 }
 
 /* ----------------- Auth middleware ----------------- */
@@ -247,7 +253,8 @@ app.post("/bff/transactions", authMiddleware, async (req, res) => {
     if (mode === "async") {
       // Forward to function trigger (createTransactions endpoint - plural)
       const codeSuffix = FUNCTION_CODE ? `?code=${FUNCTION_CODE}` : "";
-      const funcUrl = `${FUNCTION_TRIGGER_URL.replace(/\/$/, "")}/createTransactions${codeSuffix}`;
+      const baseUrl = (FUNCTION_TRIGGER_URL || "").replace(/\/$/, "");
+      const funcUrl = `${baseUrl}/createTransactions${codeSuffix}`;
       try {
         const r = await httpRequestWithRetry({ method: "post", url: funcUrl, data: payload, headers: { "x-origin-bff": "financeai-bff" } });
         // function may return 202 Accepted
