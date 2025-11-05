@@ -23,6 +23,20 @@ if (!MONGO_URI) {
   mongoose.connect(MONGO_URI).then(()=>console.log("MongoDB connected (transactions)")).catch(err=>console.error(err));
 }
 
+/* Logger de requisições de /transactions (COLoque AQUI)
+   - Precisa vir DEPOIS do bodyParser.json e ANTES do router */
+app.use((req, _res, next) => {
+    if (req.path.startsWith("/transactions")) {
+      console.log("[transactions-service] incoming", {
+        method: req.method,
+        url: req.originalUrl,
+        query: req.query,
+        body: req.body, // aqui você vê o payload que pode estar causando o 400
+      });
+    }
+  next();
+});
+
 app.use("/transactions", transactionsRouter);
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 

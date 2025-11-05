@@ -29,7 +29,6 @@ import React from "react";
 import Dashboard from "../components/Dashboard";
 import Transactions from "../components/Transactions";
 import ReportPanel from "../components/ReportPanel";
-import MyPlan from "../components/MyPlan";
 
 export default function Home() {
   return (

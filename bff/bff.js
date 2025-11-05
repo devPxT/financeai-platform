@@ -27,6 +27,7 @@ import dotenv from "dotenv";
 import bodyParser from "body-parser";
 import winston from "winston";
 import crypto from "crypto";
+import { clerkClient } from "@clerk/clerk-sdk-node";
 
 dotenv.config();
 
@@ -58,7 +59,6 @@ const CACHE_TTL = Number(process.env.CACHE_TTL || 25);
 
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "internal-secret-demo";
 
-import { clerkClient } from "@clerk/clerk-sdk-node";
 
 /* ----------------- Logger ----------------- */
 const logger = winston.createLogger({
@@ -105,6 +105,47 @@ function deriveUserId(u) {
     u.userId ||          // alternativa em alguns templates
     (typeof u.email === "string" ? u.email.split("@")[0] : undefined)
   );
+}
+
+/* Enums aceitos pelo novo payload (validação leve no BFF) */
+const TIPOS = ["Despesa", "Depósito", "Investimento"];
+const CATEGORIAS = [
+  "Educação",
+  "Entretenimento",
+  "Alimentação",
+  "Saúde",
+  "Moradia",
+  "Outros",
+  "Salário",
+  "Transporte",
+  "Utilidades"
+];
+const METODOS_PAGAMENTO = [
+  "Transferência Bancária",
+  "Boleto Bancário",
+  "Dinheiro",
+  "Cartão de Crédito",
+  "Cartão de Débito",
+  "Outros",
+  "Pix"
+];
+
+function isNonEmptyString(v) {
+  return typeof v === "string" && v.trim().length > 0;
+}
+function parseAmount(v) {
+  if (typeof v === "number") return v;
+  if (typeof v === "string") {
+    const n = Number(v.replace?.(",", "."));
+    return Number.isFinite(n) ? n : NaN;
+  }
+  return NaN;
+}
+function coerceDate(d) {
+  if (!d) return undefined;
+  const iso = typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T12:00:00.000Z` : d;
+ const nd = new Date(iso);
+  return Number.isFinite(nd.valueOf()) ? nd.toISOString() : undefined;
 }
 
 /* ----------------- Auth middleware ----------------- */
@@ -187,15 +228,7 @@ app.get("/bff/aggregate", authMiddleware, async (req, res) => {
     const user = req.user;
     const tokenUserId = deriveUserId(user);
 
-    let userId;
-    if (MOCK_AUTH) {
-      // Em dev, ainda aceitamos override por query se quiser inspecionar outro usuário
-      userId = req.query.userId || tokenUserId;
-    } else {
-      // Em produção, sempre força o userId do token
-      userId = tokenUserId;
-    }
-
+    const userId = MOCK_AUTH ? (req.query.userId || tokenUserId) : tokenUserId;
     if (!userId) return res.status(401).json({ error: "missing_user_id_from_token" });
 
     const cacheKey = `aggregate:${userId}`;
@@ -213,7 +246,8 @@ app.get("/bff/aggregate", authMiddleware, async (req, res) => {
 
     const [transactions, functionData] = await Promise.all([txPromise, funcPromise]);
 
-    const balance = (transactions || []).reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0);
+    // const balance = (transactions || []).reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0);
+    const balance = (transactions || []).reduce((s, t) => s + txSign(t) * (Number(t.amount) || 0), 0);
     const series = makeSeries(transactions || []);
     const payload = { userId, balance, series, recent: (transactions || []).slice(0, 10), functionData };
 
@@ -245,12 +279,17 @@ app.get("/bff/transactions", authMiddleware, async (req, res) => {
 app.post("/bff/transactions", authMiddleware, async (req, res) => {
   const mode = (req.query.mode || "sync").toLowerCase();
   const tokenUserId = deriveUserId(req.user);
-
   // Em produção, SEMPRE userId do token; em dev, aceita override mas prioriza token se existir
   const userId = MOCK_AUTH ? (tokenUserId || req.body?.userId) : tokenUserId;
   if (!userId) return res.status(400).json({ error: "missing_user_id_from_token" });
 
-  const payload = { ...(req.body || {}), userId };
+  // Saneia/valida o novo payload
+  const clean = sanitizeTxPayload(req.body || {});
+  if (clean.error) {
+    return res.status(400).json(clean.error);
+  }
+  const payload = { ...clean.value, userId };
+  // const payload = { ...(req.body || {}), userId };
 
   try {
     if (mode === "async") {
@@ -284,26 +323,43 @@ app.post("/bff/transactions", authMiddleware, async (req, res) => {
   }
 });
 
-app.put("/bff/transactions/:id", authMiddleware, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const url = `${TRANSACTIONS_SERVICE_URL}/transactions/${encodeURIComponent(id)}`;
-    const updated = await proxyPut(url, req.body);
-    invalidateAllAggregateCache();
-    res.json(updated);
-  } catch (err) {
-    logger.error("update_transaction_failed", { err: err.message });
-    res.status(500).json({ error: "update_transaction_failed" });
-  }
-});
-/* TRANSACTIONS - UPDATE: continuam, invalidando cache pelo userId derivado */
+// app.put("/bff/transactions/:id", authMiddleware, async (req, res) => {
+//   try {
+//     const id = req.params.id;
+//     const url = `${TRANSACTIONS_SERVICE_URL}/transactions/${encodeURIComponent(id)}`;
+//     const updated = await proxyPut(url, req.body);
+//     invalidateAllAggregateCache();
+//     res.json(updated);
+//   } catch (err) {
+//     logger.error("update_transaction_failed", { err: err.message });
+//     res.status(500).json({ error: "update_transaction_failed" });
+//   }
+// });
+/* TRANSACTIONS - UPDATE */
 app.put("/bff/transactions/:id", authMiddleware, async (req, res) => {
   try {
     const tokenUserId = deriveUserId(req.user);
     if (!tokenUserId && !MOCK_AUTH) return res.status(401).json({ error: "missing_user_id_from_token" });
+
+    // Saneamento parcial: só permitir campos do novo modelo
+    const allowed = ["name", "amount", "type", "category", "paymentMethod", "date"];
+    const body = {};
+    for (const k of allowed) {
+      if (k in req.body) body[k] = req.body[k];
+    }
+    if ("amount" in body) {
+      const n = parseAmount(body.amount);
+      if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: "valor_invalido" });
+      body.amount = n;
+    }
+    if ("date" in body) {
+      const d = coerceDate(body.date);
+      if (!d) return res.status(400).json({ error: "data_invalida" });
+      body.date = d;
+    }
+
     const url = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions/${encodeURIComponent(req.params.id)}`;
-    const updated = await proxyPut(url, req.body);
-    // invalidateAllAggregateCache();
+    const updated = await proxyPut(url, body);
     invalidateUserCache(tokenUserId);
     res.json(updated);
   } catch (err) {
@@ -381,7 +437,7 @@ app.post("/bff/create-checkout-session", authMiddleware, async (req, res) => {
       success_url: successUrl || `${req.headers.origin}/subscription?success=true`,
       cancel_url: cancelUrl || `${req.headers.origin}/subscription?canceled=true`,
       subscription_data: {
-        metadata: { clerk_user_id: deriveUserId(req.user) || "demo" }
+        metadata: { clerk_user_id: deriveUserId(req.user) }
       }
     });
 
@@ -436,7 +492,7 @@ app.post("/bff/report", authMiddleware, async (req, res) => {
     // fetch last N transactions from transactions-service
     const txUrl = `${TRANSACTIONS_SERVICE_URL}/transactions`;
     const txs = await proxyGet(txUrl, { userId, limit: 200 }).catch(() => []);
-    // small sample to avoid huge prompt
+    
     const sample = (Array.isArray(txs) ? txs.slice(-80) : []);
     const prompt = `You are a senior financial analyst. Produce a clear concise report (summary + 3 actionable recommendations) from the following transactions data:\n\n${JSON.stringify(sample, null, 2)}`;
 
@@ -515,6 +571,22 @@ async function proxyDelete(url) {
 }
 
 /* ----------------- Utilities ----------------- */
+function txSign(t) {
+  // Compat: tipos antigos (income/expense) e novos em PT-BR (Depósito/Despesa/Investimento)
+  const tp = (t?.type || "").toString().toLowerCase();
+
+  // Entradas (somam no balance)
+  if (tp === "income" || tp === "depósito" || tp === "deposito" || tp === "investimento" || tp === "investment") {
+    return 1;
+  }
+  // Saídas (subtraem do balance)
+  if (tp === "expense" || tp === "despesa") {
+    return -1;
+  }
+  // Tipos desconhecidos/neutral
+  return 0;
+}
+
 function makeSeries(transactions) {
   const map = {};
   transactions.forEach((t) => {
@@ -538,6 +610,54 @@ function invalidateAllAggregateCache() {
   cache.keys().forEach((k) => {
     if (k.startsWith("aggregate:")) cache.del(k);
   });
+}
+
+/* Saneamento/validação do payload de criação */
+function sanitizeTxPayload(body) {
+  try {
+    const out = {};
+    // name
+    if (!isNonEmptyString(body.name)) {
+      return { error: { error: "nome_invalido", detail: "Campo 'name' é obrigatório." } };
+    }
+    out.name = body.name.trim();
+
+    // amount
+    const amount = parseAmount(body.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { error: { error: "valor_invalido", detail: "Campo 'amount' deve ser número > 0." } };
+    }
+    out.amount = amount;
+
+    // type
+    if (!TIPOS.includes(body.type)) {
+      return { error: { error: "tipo_invalido", allow: TIPOS } };
+    }
+    out.type = body.type;
+
+    // category
+    if (!CATEGORIAS.includes(body.category)) {
+      return { error: { error: "categoria_invalida", allow: CATEGORIAS } };
+    }
+    out.category = body.category;
+
+    // paymentMethod
+    if (!METODOS_PAGAMENTO.includes(body.paymentMethod)) {
+      return { error: { error: "metodo_pagamento_invalido", allow: METODOS_PAGAMENTO } };
+    }
+    out.paymentMethod = body.paymentMethod;
+
+    // date (opcional)
+    if (body.date != null) {
+      const d = coerceDate(body.date);
+      if (!d) return { error: { error: "data_invalida", detail: "Use ISO ou YYYY-MM-DD." } };
+      out.date = d;
+    }
+
+    return { value: out };
+  } catch (e) {
+    return { error: { error: "payload_invalido", detail: e.message } };
+  }
 }
 
 /* ----------------- Error handling ----------------- */

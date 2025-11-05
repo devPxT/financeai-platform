@@ -3,7 +3,6 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import Login from "./pages/Login.jsx";
 import Home from "./pages/Home.jsx";
 import Transactions from "./components/Transactions.jsx";
-import MyPlan from "./components/MyPlan.jsx";
 import ProtectedRoute from "./routes/ProtectedRoute.jsx";
 import AuthLayout from "./layouts/AuthLayout.jsx";
 import Subscription from "./pages/Subscription.jsx"; // NOVO

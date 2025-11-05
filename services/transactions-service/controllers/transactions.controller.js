@@ -8,9 +8,13 @@ export async function list(req, res) {
     if (from || to) q.date = {};
     if (from) q.date.$gte = new Date(from);
     if (to) q.date.$lte = new Date(to);
+
+    console.log("[transactions-service] list query", q); //
+
     const txs = await Transaction.find(q).sort({ date: -1 }).limit(Number(limit));
     res.json(txs);
   } catch (err) {
+    console.error("[transactions-service] list error", err); //
     res.status(500).json({ error: err.message });
   }
 }
@@ -18,10 +22,19 @@ export async function list(req, res) {
 export async function create(req, res) {
   try {
     const payload = req.body;
+
+    console.log("[transactions-service] create payload", payload); //
+
     if (!payload.userId || !payload.type || !payload.amount || !payload.category) return res.status(400).json({ error: "missing_fields" });
     const tx = await Transaction.create(payload);
+
+    console.log("[transactions-service] created _id:", tx?._id?.toString()); //
+
     res.status(201).json(tx);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { 
+    console.error("[transactions-service] create error", err); //
+    res.status(500).json({ error: err.message });
+  }
 }
 
 export async function update(req, res) {
@@ -46,10 +59,17 @@ export async function summary(req, res) {
     const userId = req.query.userId;
     const q = userId ? { userId } : {};
     const txs = await Transaction.find(q);
-    const totalIncome = txs.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0);
-    const totalExpense = txs.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0);
-    const balance = totalIncome - totalExpense;
-    res.json({ totalIncome, totalExpense, balance, count: txs.length });
+
+    // Ajuste para novos tipos (PT-BR)
+    const totalEntrada = txs
+      .filter((t) => ["income", "Depósito", "Investimento", "deposito", "investimento", "depósito"].includes(t.type))
+      .reduce((s, t) => s + Number(t.amount || 0), 0);
+    const totalSaida = txs
+      .filter((t) => ["expense", "Despesa", "despesa"].includes(t.type))
+      .reduce((s, t) => s + Number(t.amount || 0), 0);
+
+    const balance = totalEntrada - totalSaida;
+    res.json({ totalEntrada, totalSaida, balance, count: txs.length });
   } catch (err) { res.status(500).json({ error: err.message }); }
 }
 
