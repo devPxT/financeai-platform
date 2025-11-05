@@ -6,6 +6,7 @@ import Transactions from "./components/Transactions.jsx";
 import MyPlan from "./components/MyPlan.jsx";
 import ProtectedRoute from "./routes/ProtectedRoute.jsx";
 import AuthLayout from "./layouts/AuthLayout.jsx";
+import Subscription from "./pages/Subscription.jsx"; // NOVO
 
 export default function App() {
   return (
@@ -23,7 +24,7 @@ export default function App() {
       >
         <Route path="/home" element={<Home />} />
         <Route path="/transactions" element={<Transactions />} />
-        <Route path="/subscription" element={<MyPlan />} />
+        <Route path="/subscription" element={<Subscription />} /> {/* trocado */}
       </Route>
 
       {/* fallback */}

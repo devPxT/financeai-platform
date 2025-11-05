@@ -37,6 +37,7 @@ const NODE_ENV = process.env.NODE_ENV || "development";
 const MOCK_AUTH = (process.env.MOCK_AUTH || "true").toLowerCase() === "true";
 const CLERK_JWKS_URI = process.env.CLERK_JWKS_URI || "";
 const CLERK_AUDIENCE = process.env.CLERK_AUDIENCE || "";
+const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY || "";
 
 const TRANSACTIONS_SERVICE_URL = (process.env.TRANSACTIONS_SERVICE_URL || "http://localhost:4100").replace(/\/$/, "");
 const ANALYTICS_SERVICE_URL = (process.env.ANALYTICS_SERVICE_URL || "http://localhost:4200").replace(/\/$/, "");
@@ -56,6 +57,8 @@ const RETRY_COUNT = Number(process.env.RETRY_COUNT || 2);
 const CACHE_TTL = Number(process.env.CACHE_TTL || 25);
 
 const INTERNAL_SECRET = process.env.INTERNAL_SECRET || "internal-secret-demo";
+
+import { clerkClient } from "@clerk/clerk-sdk-node";
 
 /* ----------------- Logger ----------------- */
 const logger = winston.createLogger({
@@ -347,7 +350,26 @@ app.get("/bff/combined-kpi", authMiddleware, async (req, res) => {
 app.post("/bff/create-checkout-session", authMiddleware, async (req, res) => {
   try {
     const { successUrl, cancelUrl } = req.body;
+    const userId = deriveUserId(req.user);  
+
     if (!STRIPE_PRICE_ID_PRO) return res.status(400).json({ error: "priceId required" });
+    if (!userId) return res.status(401).json({ error: "missing_user_id_from_token" });
+
+    // [APENAS TESTE] Atualiza plano no Clerk antes de criar a sessão
+    // Produção real: mover para webhook de pagamento aprovado
+    if (!MOCK_AUTH && process.env.CLERK_SECRET_KEY) {
+      try {
+        // Merge do publicMetadata existente para não perder chaves
+        const u = await clerkClient.users.getUser(userId);
+        const prev = u?.publicMetadata ?? {};
+        await clerkClient.users.updateUser(userId, {
+          publicMetadata: { ...prev, subscriptionPlan: "premium" }
+        });
+      } catch (e) {
+        logger.warn("clerk_update_metadata_failed", { err: e.message, userId });
+        // não aborta o fluxo do Stripe; segue criando a sessão
+      }
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
@@ -355,8 +377,9 @@ app.post("/bff/create-checkout-session", authMiddleware, async (req, res) => {
       line_items: [{ price: STRIPE_PRICE_ID_PRO, quantity: 1 }],
       // customer_email: req.user?.email,
       customer_email: "gabrielkauasantos11@gmail.com",
-      success_url: successUrl || `${req.headers.origin}/home?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: cancelUrl || `${req.headers.origin}/home`,
+      // success_url: successUrl || `${req.headers.origin}/subscription?session_id={CHECKOUT_SESSION_ID}`,
+      success_url: successUrl || `${req.headers.origin}/subscription?success=true`,
+      cancel_url: cancelUrl || `${req.headers.origin}/subscription?canceled=true`,
       subscription_data: {
         metadata: { clerk_user_id: deriveUserId(req.user) || "demo" }
       }

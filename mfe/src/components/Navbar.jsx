@@ -10,7 +10,7 @@ export default function Navbar() {
     pathname === path ? "font-bold text-white" : "text-gray-500";
 
   return (
-    <nav className="flex justify-between border-b px-8 py-4">
+    <nav className="flex justify-between border-b border-b-gray-800 px-8 py-4">
       {/* ESQUERDA */}
       <div className="flex items-center gap-10">
         <Link to="/home" className="flex items-center">

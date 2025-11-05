@@ -42,9 +42,6 @@ export default function Home() {
             <Transactions />
             <ReportPanel />
           </div>
-          <aside>
-            <MyPlan />
-          </aside>
         </div>
       </main>
     </div>
