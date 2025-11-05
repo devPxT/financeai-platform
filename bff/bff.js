@@ -355,8 +355,11 @@ app.post("/bff/create-checkout-session", authMiddleware, async (req, res) => {
       line_items: [{ price: STRIPE_PRICE_ID_PRO, quantity: 1 }],
       // customer_email: req.user?.email,
       customer_email: "gabrielkauasantos11@gmail.com",
-      success_url: successUrl || `${req.headers.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: cancelUrl || `${req.headers.origin}/home`
+      success_url: successUrl || `${req.headers.origin}/home?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: cancelUrl || `${req.headers.origin}/home`,
+      subscription_data: {
+        metadata: { clerk_user_id: deriveUserId(req.user) || "demo" }
+      }
     });
 
     res.json({ url: session.url, id: session.id });

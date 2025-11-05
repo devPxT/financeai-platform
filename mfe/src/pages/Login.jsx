@@ -32,7 +32,7 @@ export default function Login() {
           facilitando o controle do seu orçamento.
         </p>
         <SignInButton mode="modal" redirectUrl="/home">
-          <Button variant="outline">
+          <Button variant="default">
             <LogIn className="mr-2 h-4 w-4" />
             Fazer login ou criar conta
           </Button>

@@ -1,6 +1,8 @@
 # dependencies
 node_modules/
 
+.vscode
+
 # env files (can opt-in for commiting if needed)
 .env*
 
