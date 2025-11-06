@@ -494,12 +494,20 @@ app.post("/bff/report", authMiddleware, async (req, res) => {
     const txs = await proxyGet(txUrl, { userId, limit: 200 }).catch(() => []);
     
     const sample = (Array.isArray(txs) ? txs.slice(-80) : []);
-    const prompt = `You are a senior financial analyst. Produce a clear concise report (summary + 3 actionable recommendations) from the following transactions data:\n\n${JSON.stringify(sample, null, 2)}`;
+    
+    const prompt = `
+      Você é um analista financeiro sênior.
+      Produza um relatório claro e conciso em **português do Brasil**, com:
+      - Um **resumo geral** das transações;
+      - **Três recomendações acionáveis** para o usuário;
+      Abaixo estão os dados das transações:
+    ${JSON.stringify(sample, null, 2)}
+    `;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        { role: "system", content: "You are an expert financial analyst." },
+        { role: "system", content: "Você é um analista financeiro sênior. Sempre responda em português do Brasil de forma profissional e objetiva." },
         { role: "user", content: prompt }
       ],
       temperature: 0.6,
