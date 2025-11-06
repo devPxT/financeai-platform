@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -10,27 +9,27 @@ import {
 } from "@/components/ui/tooltip";
 import { ArrowDownUpIcon } from "lucide-react";
 
-export default function AddTransactionButton({ userCanAdd, disabledReason }) {
-  const disabled = useMemo(() => userCanAdd === false, [userCanAdd]);
-  const tooltipText =
-    disabledReason ||
-    "Você atingiu o limite de transações. Atualize seu plano para criar transações ilimitadas.";
-
+export default function AddTransactionButton({ userCanAdd, disabledReason, onClick }) {
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
             className="rounded-full font-bold"
-            onClick={() => {/* abrirá o modal futuramente */}}
-            disabled={disabled}
+            onClick={onClick}
+            disabled={!userCanAdd}
           >
             Adicionar transação
 
             <ArrowDownUpIcon />
           </Button>
         </TooltipTrigger>
-        {disabled && <TooltipContent>{tooltipText}</TooltipContent>}
+        {!userCanAdd && (
+          <TooltipContent>
+            {disabledReason ||
+              "Você atingiu o limite de transações. Atualize seu plano para criar transações ilimitadas."}
+          </TooltipContent>
+        )}
       </Tooltip>
     </TooltipProvider>
   );

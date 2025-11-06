@@ -7,6 +7,8 @@ import { DataTable } from "@/components/ui/data-table";
 import { useCanUserAddTransaction } from "@/hooks/useCanUserAddTransaction";
 import EditTransactionIcon from "@/components/EditTransactionIcon";
 import DeleteTransactionIcon from "@/components/DeleteTransactionIcon";
+import UpsertTransactionDialog from "@/components/UpsertTransactionDialog";
+import DeleteTransactionDialog from "@/components/DeleteTransactionDialog";
 
 function formatDateBR(value) {
   if (!value) return "—";
@@ -21,6 +23,14 @@ export default function TransactionsPage() {
   const api = useBff();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Modal states
+  const [upsertOpen, setUpsertOpen] = useState(false);
+  const [editTx, setEditTx] = useState(null);
+
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteTx, setDeleteTx] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const { isPremium, currentMonthCount, userCanAdd } = useCanUserAddTransaction();
 
@@ -49,22 +59,35 @@ export default function TransactionsPage() {
     }
   }
 
-  async function deleteById(id) {
+  function openCreate() {
+    setEditTx(null);
+    setUpsertOpen(true);
+  }
+  function openEdit(tx) {
+    setEditTx(tx);
+    setUpsertOpen(true);
+  }
+  function openDelete(tx) {
+    setDeleteTx(tx);
+    setDeleteOpen(true);
+  }
+
+  async function onDeleteConfirm() {
+    if (!deleteTx) return;
+    const id = deleteTx._id || deleteTx.id;
     if (!id) return;
-    const ok = window.confirm("Deseja realmente deletar esta transação?");
-    if (!ok) return;
     try {
+      setDeleting(true);
       await api.del(`/bff/transactions/${encodeURIComponent(id)}`);
-      setRows((prev) => prev.filter((t) => (t._id || t.id) !== id));
+      setDeleteOpen(false);
+      setDeleteTx(null);
+      await refresh();
     } catch (err) {
       console.error("delete error", err);
       alert("Erro ao deletar: " + (err?.message || String(err)));
+    } finally {
+      setDeleting(false);
     }
-  }
-
-  function editTransaction(tx) {
-    console.log("Editar transação (placeholder)", tx);
-    // Modal futuro
   }
 
   const columns = useMemo(
@@ -104,13 +127,12 @@ export default function TransactionsPage() {
         header: "Ações",
         cell: ({ row }) => {
           const tx = row.original;
-          const id = tx._id || tx.id;
           return (
             <div className="flex items-center gap-4">
-              <EditTransactionIcon onClick={() => editTransaction(tx)} />
+              <EditTransactionIcon onClick={() => openEdit(tx)} />
               <DeleteTransactionIcon
-                disabled={!id}
-                onClick={() => deleteById(id)}
+                disabled={!(tx._id || tx.id)}
+                onClick={() => openDelete(tx)}
               />
             </div>
           );
@@ -127,6 +149,7 @@ export default function TransactionsPage() {
         <AddTransactionButton
           userCanAdd={userCanAdd}
           disabledReason={disabledReason}
+          onClick={openCreate}
         />
       </div>
 
@@ -137,6 +160,23 @@ export default function TransactionsPage() {
           <DataTable columns={columns} data={rows} />
         )}
       </ScrollArea>
+
+      {/* Modal de criar/editar */}
+      <UpsertTransactionDialog
+        open={upsertOpen}
+        setOpen={setUpsertOpen}
+        transaction={editTx}
+        onSuccess={refresh}
+      />
+
+      {/* Modal de deletar */}
+      <DeleteTransactionDialog
+        open={deleteOpen}
+        setOpen={setDeleteOpen}
+        transactionName={deleteTx?.name}
+        onConfirm={onDeleteConfirm}
+        loading={deleting}
+      />
     </div>
   );
 }
