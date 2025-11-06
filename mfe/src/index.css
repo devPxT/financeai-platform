@@ -176,3 +176,9 @@ body {
   font-size: 0.9rem;
   color: var(--muted);
 }
+
+.datatable tr:hover,
+.datatable thead tr:hover,
+.datatable tbody tr:hover {
+  background: transparent !important;
+}
