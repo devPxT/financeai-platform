@@ -6,7 +6,9 @@
     "start": "func start"
   },
   "dependencies": {
-    "node-fetch": "^2.6.1",
-    "dotenv": "^16.0.0"
+    "crypto": "^1.0.1",
+    "dotenv": "^16.0.0",
+    "mongodb": "^7.0.0",
+    "node-fetch": "^2.6.1"
   }
 }

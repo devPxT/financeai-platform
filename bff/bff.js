@@ -42,8 +42,13 @@ const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY || "";
 
 const TRANSACTIONS_SERVICE_URL = (process.env.TRANSACTIONS_SERVICE_URL || "http://localhost:4100").replace(/\/$/, "");
 const ANALYTICS_SERVICE_URL = (process.env.ANALYTICS_SERVICE_URL || "http://localhost:4200").replace(/\/$/, "");
-const FUNCTION_TRIGGER_URL = (process.env.FUNCTION_TRIGGER_URL || "http://localhost:4300").replace(/\/$/, "");
 const FUNCTION_CONTEXT_TRIGGER_URL = (process.env.FUNCTION_CONTEXT_TRIGGER_URL || "http://localhost:4300").replace(/\/$/, "");
+
+const FUNCTION_TRIGGER_URL = (process.env.FUNCTION_TRIGGER_URL || "http://localhost:4300").replace(/\/$/, "");
+
+const FUNCTION_CREATE_PATH = process.env.FUNCTION_CREATE_PATH || "/createTransactions";
+const FUNCTION_UPDATE_PATH = process.env.FUNCTION_UPDATE_PATH || "/updateTransactions/{id}";
+const FUNCTION_DELETE_PATH = process.env.FUNCTION_DELETE_PATH || "/deleteTransactions/{id}";
 
 const FUNCTION_CODE = process.env.FUNCTION_CODE || "";
 
@@ -146,6 +151,10 @@ function coerceDate(d) {
   const iso = typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) ? `${d}T12:00:00.000Z` : d;
  const nd = new Date(iso);
   return Number.isFinite(nd.valueOf()) ? nd.toISOString() : undefined;
+}
+
+function withCode(url) {
+  return FUNCTION_CODE ? `${url}${url.includes("?") ? "&" : "?"}code=${encodeURIComponent(FUNCTION_CODE)}` : url;
 }
 
 /* ----------------- Auth middleware ----------------- */
@@ -276,77 +285,187 @@ app.get("/bff/transactions", authMiddleware, async (req, res) => {
 });
 
 /* TRANSACTIONS - CREATE (sync/async) */
-app.post("/bff/transactions", authMiddleware, async (req, res) => {
-  const mode = (req.query.mode || "sync").toLowerCase();
-  const tokenUserId = deriveUserId(req.user);
-  // Em produção, SEMPRE userId do token; em dev, aceita override mas prioriza token se existir
-  const userId = MOCK_AUTH ? (tokenUserId || req.body?.userId) : tokenUserId;
-  if (!userId) return res.status(400).json({ error: "missing_user_id_from_token" });
+// app.post("/bff/transactions", authMiddleware, async (req, res) => {
+//   const mode = (req.query.mode || "sync").toLowerCase();
+//   const tokenUserId = deriveUserId(req.user);
+//   // Em produção, SEMPRE userId do token; em dev, aceita override mas prioriza token se existir
+//   const userId = MOCK_AUTH ? (tokenUserId || req.body?.userId) : tokenUserId;
+//   if (!userId) return res.status(400).json({ error: "missing_user_id_from_token" });
 
-  // Saneia/valida o novo payload
-  const clean = sanitizeTxPayload(req.body || {});
-  if (clean.error) {
-    return res.status(400).json(clean.error);
-  }
-  const payload = { ...clean.value, userId };
-  // const payload = { ...(req.body || {}), userId };
+//   // Saneia/valida o novo payload
+//   const clean = sanitizeTxPayload(req.body || {});
+//   if (clean.error) {
+//     return res.status(400).json(clean.error);
+//   }
+//   const payload = { ...clean.value, userId };
+//   // const payload = { ...(req.body || {}), userId };
 
-  try {
-    if (mode === "async") {
-      const codeSuffix = FUNCTION_CODE ? `?code=${encodeURIComponent(FUNCTION_CODE)}` : "";
-      const funcUrl = `${FUNCTION_TRIGGER_URL.replace(/\/$/, "")}/createTransactions${codeSuffix}`;
-      try {
-        const r = await httpRequestWithRetry({
-          method: "post",
-          url: funcUrl,
-          data: payload,
-          headers: { "x-origin-bff": "financeai-bff" }
-        });
-        return res.status(r.status === 202 ? 202 : 201).json({ fromFunction: true, data: r.data });
-      } catch (err) {
-        logger.warn("function_create_failed", { err: err.message });
-        // fallback direto no serviço
-        const svcUrl = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions`;
-        const created = await proxyPost(svcUrl, payload);
-        invalidateUserCache(userId);
-        return res.status(201).json({ fallback: true, created });
-      }
-    } else {
-      const svcUrl = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions`;
-      const created = await proxyPost(svcUrl, payload);
-      invalidateUserCache(userId);
-      return res.status(201).json(created);
-    }
-  } catch (err) {
-    logger.error("create_transaction_failed", { err: err.message });
-    res.status(500).json({ error: "create_transaction_failed", details: err.message });
-  }
-});
+//   try {
+//     if (mode === "async") {
+//       const codeSuffix = FUNCTION_CODE ? `?code=${encodeURIComponent(FUNCTION_CODE)}` : "";
+//       const funcUrl = `${FUNCTION_TRIGGER_URL.replace(/\/$/, "")}/createTransactions${codeSuffix}`;
+//       try {
+//         const r = await httpRequestWithRetry({
+//           method: "post",
+//           url: funcUrl,
+//           data: payload,
+//           headers: { "x-origin-bff": "financeai-bff" }
+//         });
+//         return res.status(r.status === 202 ? 202 : 201).json({ fromFunction: true, data: r.data });
+//       } catch (err) {
+//         logger.warn("function_create_failed", { err: err.message });
+//         // fallback direto no serviço
+//         const svcUrl = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions`;
+//         const created = await proxyPost(svcUrl, payload);
+//         invalidateUserCache(userId);
+//         return res.status(201).json({ fallback: true, created });
+//       }
+//     } else {
+//       const svcUrl = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions`;
+//       const created = await proxyPost(svcUrl, payload);
+//       invalidateUserCache(userId);
+//       return res.status(201).json(created);
+//     }
+//   } catch (err) {
+//     logger.error("create_transaction_failed", { err: err.message });
+//     res.status(500).json({ error: "create_transaction_failed", details: err.message });
+//   }
+// });
+/* TRANSACTIONS - CREATE (usar somente Azure Function) */
+// app.post("/bff/transactions", authMiddleware, async (req, res) => {
+//   try {
+//     const tokenUserId = deriveUserId(req.user);
+//     // Em produção, SEMPRE userId do token; em dev, aceita override mas prioriza token se existir
+//     const userId = MOCK_AUTH ? (tokenUserId || req.body?.userId) : tokenUserId;
+//     if (!userId) return res.status(400).json({ error: "missing_user_id_from_token" });
 
+//     // Saneia/valida o novo payload
+//     const clean = sanitizeTxPayload(req.body || {});
+//     if (clean.error) {
+//       return res.status(400).json(clean.error);
+//     }
+//     const payload = { ...clean.value, userId };
+
+//     // Caminho da Azure Function responsável por criar a transação
+//     // Ajuste se o nome da sua Function for outro.
+//     const functionCreatePath = process.env.FUNCTION_CREATE_PATH || "/createTransactions";
+//     const codeSuffix = FUNCTION_CODE ? `?code=${encodeURIComponent(FUNCTION_CODE)}` : "";
+//     const funcUrl = `${FUNCTION_TRIGGER_URL.replace(/\/$/, "")}${functionCreatePath}${codeSuffix}`;
+
+//     logger.info("creating transaction via function", { funcUrl });
+
+//     const r = await httpRequestWithRetry({
+//       method: "post",
+//       url: funcUrl,
+//       data: payload,
+//       headers: {
+//         "Content-Type": "application/json",
+//         "x-origin-bff": "financeai-bff",
+//         // a function pode ler userId do header se preferir
+//         "x-user-id": userId
+//       },
+//       timeout: HTTP_TIMEOUT_MS
+//     });
+
+//     // Invalida cache do agregado do usuário
+//     invalidateUserCache(userId);
+
+//     // Propaga status e corpo retornado pela Function
+//     return res.status(r.status || 201).json(r.data);
+//   } catch (err) {
+//     logger.error("create_transaction_via_function_failed", { err: err.message });
+//     res.status(500).json({ error: "create_transaction_failed", details: err.message });
+//   }
+// });
+
+// /* TRANSACTIONS - UPDATE */
 // app.put("/bff/transactions/:id", authMiddleware, async (req, res) => {
 //   try {
-//     const id = req.params.id;
-//     const url = `${TRANSACTIONS_SERVICE_URL}/transactions/${encodeURIComponent(id)}`;
-//     const updated = await proxyPut(url, req.body);
-//     invalidateAllAggregateCache();
+//     const tokenUserId = deriveUserId(req.user);
+//     if (!tokenUserId && !MOCK_AUTH) return res.status(401).json({ error: "missing_user_id_from_token" });
+
+//     // Saneamento parcial: só permitir campos do novo modelo
+//     const allowed = ["name", "amount", "type", "category", "paymentMethod", "date"];
+//     const body = {};
+//     for (const k of allowed) {
+//       if (k in req.body) body[k] = req.body[k];
+//     }
+//     if ("amount" in body) {
+//       const n = parseAmount(body.amount);
+//       if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: "valor_invalido" });
+//       body.amount = n;
+//     }
+//     if ("date" in body) {
+//       const d = coerceDate(body.date);
+//       if (!d) return res.status(400).json({ error: "data_invalida" });
+//       body.date = d;
+//     }
+
+//     const url = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions/${encodeURIComponent(req.params.id)}`;
+//     const updated = await proxyPut(url, body);
+//     invalidateUserCache(tokenUserId);
 //     res.json(updated);
 //   } catch (err) {
 //     logger.error("update_transaction_failed", { err: err.message });
 //     res.status(500).json({ error: "update_transaction_failed" });
 //   }
 // });
-/* TRANSACTIONS - UPDATE */
+
+// /* TRANSACTIONS - DELETE: continuam, invalidando cache pelo userId derivado */
+// app.delete("/bff/transactions/:id", authMiddleware, async (req, res) => {
+//   try {
+//     const tokenUserId = deriveUserId(req.user);
+//     if (!tokenUserId && !MOCK_AUTH) return res.status(401).json({ error: "missing_user_id_from_token" });
+//     const url = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions/${encodeURIComponent(req.params.id)}`;
+//     const out = await proxyDelete(url);
+//     invalidateUserCache(tokenUserId);
+//     res.json(out);
+//   } catch (err) {
+//     logger.error("delete_transaction_failed", { err: err.message });
+//     res.status(500).json({ error: "delete_transaction_failed" });
+//   }
+// });
+
+/* CREATE via Function */
+app.post("/bff/transactions", authMiddleware, async (req, res) => {
+  try {
+    const tokenUserId = deriveUserId(req.user);
+    const userId = (process.env.MOCK_AUTH || "true").toLowerCase() === "true" ? (tokenUserId || req.body?.userId) : tokenUserId;
+    if (!userId) return res.status(400).json({ error: "missing_user_id_from_token" });
+
+    const clean = sanitizeTxPayload(req.body || {});
+    if (clean.error) return res.status(400).json(clean.error);
+    const payload = { ...clean.value, userId };
+
+    const base = `${FUNCTION_TRIGGER_URL}${FUNCTION_CREATE_PATH}`;
+    const funcUrl = withCode(base);
+
+    const r = await httpRequestWithRetry({
+      method: "post",
+      url: funcUrl,
+      data: payload,
+      headers: { "Content-Type": "application/json", "x-user-id": userId }
+    });
+
+    invalidateUserCache(userId);
+    return res.status(r.status || 201).json(r.data);
+  } catch (err) {
+    res.status(500).json({ error: "create_transaction_failed", details: err.message });
+  }
+});
+
+/* UPDATE via Function */
 app.put("/bff/transactions/:id", authMiddleware, async (req, res) => {
   try {
     const tokenUserId = deriveUserId(req.user);
-    if (!tokenUserId && !MOCK_AUTH) return res.status(401).json({ error: "missing_user_id_from_token" });
+    if (!tokenUserId && (process.env.MOCK_AUTH || "true").toLowerCase() !== "true") {
+      return res.status(401).json({ error: "missing_user_id_from_token" });
+    }
+    const userId = tokenUserId;
 
-    // Saneamento parcial: só permitir campos do novo modelo
     const allowed = ["name", "amount", "type", "category", "paymentMethod", "date"];
     const body = {};
-    for (const k of allowed) {
-      if (k in req.body) body[k] = req.body[k];
-    }
+    for (const k of allowed) if (k in req.body) body[k] = req.body[k];
     if ("amount" in body) {
       const n = parseAmount(body.amount);
       if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: "valor_invalido" });
@@ -358,28 +477,50 @@ app.put("/bff/transactions/:id", authMiddleware, async (req, res) => {
       body.date = d;
     }
 
-    const url = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions/${encodeURIComponent(req.params.id)}`;
-    const updated = await proxyPut(url, body);
-    invalidateUserCache(tokenUserId);
-    res.json(updated);
+    const path = FUNCTION_UPDATE_PATH.replace("{id}", encodeURIComponent(req.params.id));
+    const funcUrl = withCode(`${FUNCTION_TRIGGER_URL}${path}`);
+
+    const r = await httpRequestWithRetry({
+      method: "put",
+      url: funcUrl,
+      data: body,
+      headers: { "Content-Type": "application/json", "x-user-id": userId }
+    });
+
+    invalidateUserCache(userId);
+    res.status(r.status || 200).json(r.data);
   } catch (err) {
-    logger.error("update_transaction_failed", { err: err.message });
-    res.status(500).json({ error: "update_transaction_failed" });
+    if (err?.response) {
+      // repassa status/corpo que veio da Function (ex.: 404 not_found_or_not_owned)
+      return res.status(err.response.status).json(err.response.data);
+    }
+    res.status(500).json({ error: "update_transaction_failed", details: err.message });
   }
 });
 
-/* TRANSACTIONS - DELETE: continuam, invalidando cache pelo userId derivado */
+/* DELETE via Function */
 app.delete("/bff/transactions/:id", authMiddleware, async (req, res) => {
   try {
     const tokenUserId = deriveUserId(req.user);
-    if (!tokenUserId && !MOCK_AUTH) return res.status(401).json({ error: "missing_user_id_from_token" });
-    const url = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions/${encodeURIComponent(req.params.id)}`;
-    const out = await proxyDelete(url);
-    invalidateUserCache(tokenUserId);
-    res.json(out);
+    if (!tokenUserId && (process.env.MOCK_AUTH || "true").toLowerCase() !== "true") {
+      return res.status(401).json({ error: "missing_user_id_from_token" });
+    }
+    const userId = tokenUserId;
+
+    const path = FUNCTION_DELETE_PATH.replace("{id}", encodeURIComponent(req.params.id));
+    const base = `${FUNCTION_TRIGGER_URL}${path}`;
+    const funcUrl = withCode(base);
+
+    const r = await httpRequestWithRetry({
+      method: "delete",
+      url: funcUrl,
+      headers: { "x-user-id": userId }
+    });
+
+    invalidateUserCache(userId);
+    res.status(r.status || 200).json(r.data);
   } catch (err) {
-    logger.error("delete_transaction_failed", { err: err.message });
-    res.status(500).json({ error: "delete_transaction_failed" });
+    res.status(500).json({ error: "delete_transaction_failed", details: err.message });
   }
 });
 
@@ -584,11 +725,11 @@ function txSign(t) {
   const tp = (t?.type || "").toString().toLowerCase();
 
   // Entradas (somam no balance)
-  if (tp === "income" || tp === "depósito" || tp === "deposito" || tp === "investimento" || tp === "investment") {
+  if (tp === "income" || tp === "depósito" || tp === "deposito") {
     return 1;
   }
   // Saídas (subtraem do balance)
-  if (tp === "expense" || tp === "despesa") {
+  if (tp === "expense" || tp === "despesa" || tp === "investimento" || tp === "investment") {
     return -1;
   }
   // Tipos desconhecidos/neutral

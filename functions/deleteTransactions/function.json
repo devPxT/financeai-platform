@@ -5,13 +5,13 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["post"],
-      "route": "createTransactions"
+      "methods": ["delete"],
+      "route": "deleteTransactions/{id}"
     },
-    { 
-      "type": "http", 
-      "direction": "out", 
-      "name": "res" 
+    {
+      "type": "http",
+      "direction": "out",
+      "name": "res"
     }
   ]
 }
