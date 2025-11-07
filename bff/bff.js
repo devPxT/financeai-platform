@@ -42,7 +42,6 @@ const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY || "";
 
 const TRANSACTIONS_SERVICE_URL = (process.env.TRANSACTIONS_SERVICE_URL || "http://localhost:4100").replace(/\/$/, "");
 const ANALYTICS_SERVICE_URL = (process.env.ANALYTICS_SERVICE_URL || "http://localhost:4200").replace(/\/$/, "");
-const FUNCTION_CONTEXT_TRIGGER_URL = (process.env.FUNCTION_CONTEXT_TRIGGER_URL || "http://localhost:4300").replace(/\/$/, "");
 
 const FUNCTION_TRIGGER_URL = (process.env.FUNCTION_TRIGGER_URL || "http://localhost:4300").replace(/\/$/, "");
 
@@ -255,18 +254,13 @@ app.get("/bff/aggregate", authMiddleware, async (req, res) => {
     const txUrl = `${TRANSACTIONS_SERVICE_URL}/transactions`;
     const txPromise = proxyGet(txUrl, { userId }).catch(() => []);
 
-    // const funcUrl = `${FUNCTION_TRIGGER_URL.replace(/\/$/, "")}/functionContext?userId=${encodeURIComponent(userId)}`;
-    const funcUrl = `${FUNCTION_CONTEXT_TRIGGER_URL}?userId=${encodeURIComponent(userId || "")}`;
-    const funcPromise = httpRequestWithRetry({ method: "get", url: funcUrl })
-      .then((r) => r.data)
-      .catch(() => null);
-
-    const [transactions, functionData] = await Promise.all([txPromise, funcPromise]);
+    // const [transactions, functionData] = await Promise.all([txPromise, funcPromise]);
+    const [transactions] = await Promise.all([txPromise]);
 
     // const balance = (transactions || []).reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0);
     const balance = (transactions || []).reduce((s, t) => s + txSign(t) * (Number(t.amount) || 0), 0);
     const series = makeSeries(transactions || []);
-    const payload = { userId, balance, series, recent: (transactions || []).slice(0, 10), functionData };
+    const payload = { userId, balance, series, recent: (transactions || []).slice(0, 10), functionData: {} };
 
     cache.set(cacheKey, payload);
     res.json({ fromCache: false, ...payload });
