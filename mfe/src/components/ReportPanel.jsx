@@ -13,6 +13,8 @@ export default function ReportPanel() {
     try {
       const r = await api.post("/bff/report", {}); // body optional
       setReport(r.report || JSON.stringify(r, null, 2));
+
+      // const r = await api.get("/bff/combined-kpi"); // body optional
     } catch (err) {
       setReport("Erro: " + (err.message || String(err)));
     } finally {

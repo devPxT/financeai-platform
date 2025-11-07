@@ -217,8 +217,16 @@ app.use(helmet());
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: "1mb" })); // general JSON
 app.use(morgan("combined", { stream: { write: (msg) => logger.info(msg.trim()) } }));
-app.set("trust proxy", true);
-app.use(rateLimit({ windowMs: 60 * 1000, max: 400 }));
+// app.set("trust proxy", true);
+// app.use(rateLimit({ windowMs: 60 * 1000, max: 400 }));
+app.set("trust proxy", 1);
+app.use(rateLimit({
+  windowMs: 60 * 1000,
+  max: 400,
+  standardHeaders: true,
+  legacyHeaders: false,
+  trustProxy: true
+}));
 
 /* ----------------- Routes ----------------- */
 
@@ -283,148 +291,6 @@ app.get("/bff/transactions", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "list_transactions_failed" });
   }
 });
-
-/* TRANSACTIONS - CREATE (sync/async) */
-// app.post("/bff/transactions", authMiddleware, async (req, res) => {
-//   const mode = (req.query.mode || "sync").toLowerCase();
-//   const tokenUserId = deriveUserId(req.user);
-//   // Em produção, SEMPRE userId do token; em dev, aceita override mas prioriza token se existir
-//   const userId = MOCK_AUTH ? (tokenUserId || req.body?.userId) : tokenUserId;
-//   if (!userId) return res.status(400).json({ error: "missing_user_id_from_token" });
-
-//   // Saneia/valida o novo payload
-//   const clean = sanitizeTxPayload(req.body || {});
-//   if (clean.error) {
-//     return res.status(400).json(clean.error);
-//   }
-//   const payload = { ...clean.value, userId };
-//   // const payload = { ...(req.body || {}), userId };
-
-//   try {
-//     if (mode === "async") {
-//       const codeSuffix = FUNCTION_CODE ? `?code=${encodeURIComponent(FUNCTION_CODE)}` : "";
-//       const funcUrl = `${FUNCTION_TRIGGER_URL.replace(/\/$/, "")}/createTransactions${codeSuffix}`;
-//       try {
-//         const r = await httpRequestWithRetry({
-//           method: "post",
-//           url: funcUrl,
-//           data: payload,
-//           headers: { "x-origin-bff": "financeai-bff" }
-//         });
-//         return res.status(r.status === 202 ? 202 : 201).json({ fromFunction: true, data: r.data });
-//       } catch (err) {
-//         logger.warn("function_create_failed", { err: err.message });
-//         // fallback direto no serviço
-//         const svcUrl = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions`;
-//         const created = await proxyPost(svcUrl, payload);
-//         invalidateUserCache(userId);
-//         return res.status(201).json({ fallback: true, created });
-//       }
-//     } else {
-//       const svcUrl = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions`;
-//       const created = await proxyPost(svcUrl, payload);
-//       invalidateUserCache(userId);
-//       return res.status(201).json(created);
-//     }
-//   } catch (err) {
-//     logger.error("create_transaction_failed", { err: err.message });
-//     res.status(500).json({ error: "create_transaction_failed", details: err.message });
-//   }
-// });
-/* TRANSACTIONS - CREATE (usar somente Azure Function) */
-// app.post("/bff/transactions", authMiddleware, async (req, res) => {
-//   try {
-//     const tokenUserId = deriveUserId(req.user);
-//     // Em produção, SEMPRE userId do token; em dev, aceita override mas prioriza token se existir
-//     const userId = MOCK_AUTH ? (tokenUserId || req.body?.userId) : tokenUserId;
-//     if (!userId) return res.status(400).json({ error: "missing_user_id_from_token" });
-
-//     // Saneia/valida o novo payload
-//     const clean = sanitizeTxPayload(req.body || {});
-//     if (clean.error) {
-//       return res.status(400).json(clean.error);
-//     }
-//     const payload = { ...clean.value, userId };
-
-//     // Caminho da Azure Function responsável por criar a transação
-//     // Ajuste se o nome da sua Function for outro.
-//     const functionCreatePath = process.env.FUNCTION_CREATE_PATH || "/createTransactions";
-//     const codeSuffix = FUNCTION_CODE ? `?code=${encodeURIComponent(FUNCTION_CODE)}` : "";
-//     const funcUrl = `${FUNCTION_TRIGGER_URL.replace(/\/$/, "")}${functionCreatePath}${codeSuffix}`;
-
-//     logger.info("creating transaction via function", { funcUrl });
-
-//     const r = await httpRequestWithRetry({
-//       method: "post",
-//       url: funcUrl,
-//       data: payload,
-//       headers: {
-//         "Content-Type": "application/json",
-//         "x-origin-bff": "financeai-bff",
-//         // a function pode ler userId do header se preferir
-//         "x-user-id": userId
-//       },
-//       timeout: HTTP_TIMEOUT_MS
-//     });
-
-//     // Invalida cache do agregado do usuário
-//     invalidateUserCache(userId);
-
-//     // Propaga status e corpo retornado pela Function
-//     return res.status(r.status || 201).json(r.data);
-//   } catch (err) {
-//     logger.error("create_transaction_via_function_failed", { err: err.message });
-//     res.status(500).json({ error: "create_transaction_failed", details: err.message });
-//   }
-// });
-
-// /* TRANSACTIONS - UPDATE */
-// app.put("/bff/transactions/:id", authMiddleware, async (req, res) => {
-//   try {
-//     const tokenUserId = deriveUserId(req.user);
-//     if (!tokenUserId && !MOCK_AUTH) return res.status(401).json({ error: "missing_user_id_from_token" });
-
-//     // Saneamento parcial: só permitir campos do novo modelo
-//     const allowed = ["name", "amount", "type", "category", "paymentMethod", "date"];
-//     const body = {};
-//     for (const k of allowed) {
-//       if (k in req.body) body[k] = req.body[k];
-//     }
-//     if ("amount" in body) {
-//       const n = parseAmount(body.amount);
-//       if (!Number.isFinite(n) || n <= 0) return res.status(400).json({ error: "valor_invalido" });
-//       body.amount = n;
-//     }
-//     if ("date" in body) {
-//       const d = coerceDate(body.date);
-//       if (!d) return res.status(400).json({ error: "data_invalida" });
-//       body.date = d;
-//     }
-
-//     const url = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions/${encodeURIComponent(req.params.id)}`;
-//     const updated = await proxyPut(url, body);
-//     invalidateUserCache(tokenUserId);
-//     res.json(updated);
-//   } catch (err) {
-//     logger.error("update_transaction_failed", { err: err.message });
-//     res.status(500).json({ error: "update_transaction_failed" });
-//   }
-// });
-
-// /* TRANSACTIONS - DELETE: continuam, invalidando cache pelo userId derivado */
-// app.delete("/bff/transactions/:id", authMiddleware, async (req, res) => {
-//   try {
-//     const tokenUserId = deriveUserId(req.user);
-//     if (!tokenUserId && !MOCK_AUTH) return res.status(401).json({ error: "missing_user_id_from_token" });
-//     const url = `${TRANSACTIONS_SERVICE_URL.replace(/\/$/, "")}/transactions/${encodeURIComponent(req.params.id)}`;
-//     const out = await proxyDelete(url);
-//     invalidateUserCache(tokenUserId);
-//     res.json(out);
-//   } catch (err) {
-//     logger.error("delete_transaction_failed", { err: err.message });
-//     res.status(500).json({ error: "delete_transaction_failed" });
-//   }
-// });
 
 /* CREATE via Function */
 app.post("/bff/transactions", authMiddleware, async (req, res) => {
@@ -626,16 +492,68 @@ app.post("/bff/stripe-webhook", bodyParser.raw({ type: "application/json" }), (r
   res.json({ received: true });
 });
 
-/* OPENAI REPORT: generate report using last transactions (proxy+openai) */
+// /* OPENAI REPORT: generate report using last transactions (proxy+openai) */
+// app.post("/bff/report", authMiddleware, async (req, res) => {
+//   try {
+//     const userId = req.user?.id || req.body.userId;
+//     // fetch last N transactions from transactions-service
+//     const txUrl = `${TRANSACTIONS_SERVICE_URL}/transactions`;
+//     const txs = await proxyGet(txUrl, { userId, limit: 200 }).catch(() => []);
+    
+//     const sample = (Array.isArray(txs) ? txs.slice(-80) : []);
+    
+//     const prompt = `
+//       Você é um analista financeiro sênior.
+//       Produza um relatório claro e conciso em **português do Brasil**, com:
+//       - Um **resumo geral** das transações;
+//       - **Três recomendações acionáveis** para o usuário;
+//       Abaixo estão os dados das transações:
+//     ${JSON.stringify(sample, null, 2)}
+//     `;
+
+//     const response = await openai.chat.completions.create({
+//       model: "gpt-4o-mini",
+//       messages: [
+//         { role: "system", content: "Você é um analista financeiro sênior. Sempre responda em português do Brasil de forma profissional e objetiva." },
+//         { role: "user", content: prompt }
+//       ],
+//       temperature: 0.6,
+//       max_tokens: 800
+//     });
+
+//     const reportText = response?.choices?.[0]?.message?.content || "No result";
+//     res.json({ report: reportText });
+//   } catch (err) {
+//     logger.error("openai_report_error", { err: err.message });
+//     res.status(500).json({ error: "report_failed", details: err.message });
+//   }
+// });
+
+/* OPENAI REPORT: generate report using last transactions (OpenAI no BFF) + persistir no analytics-service */
 app.post("/bff/report", authMiddleware, async (req, res) => {
   try {
-    const userId = req.user?.id || req.body.userId;
-    // fetch last N transactions from transactions-service
+    const tokenUserId = deriveUserId(req.user);
+    if (!tokenUserId && (process.env.MOCK_AUTH || "true").toLowerCase() !== "true") {
+      return res.status(401).json({ error: "missing_user_id_from_token" });
+    }
+    const userId = tokenUserId;
+
+    // (Opcional) checar cota antes de gerar
+    try {
+      const quotaUrl = `${ANALYTICS_SERVICE_URL.replace(/\/$/, "")}/reports/quota`;
+      const quota = await httpRequestWithRetry({ method: "get", url: quotaUrl, params: { userId } }).then(r => r.data);
+      if (quota && quota.remaining === 0) {
+        return res.status(429).json({ error: "monthly_limit_reached", ...quota });
+      }
+    } catch (_) {
+      // se analytics estiver off, ainda assim geramos (gravação pode falhar depois)
+    }
+
+    // buscar últimas transações (como já fazia)
     const txUrl = `${TRANSACTIONS_SERVICE_URL}/transactions`;
     const txs = await proxyGet(txUrl, { userId, limit: 200 }).catch(() => []);
-    
     const sample = (Array.isArray(txs) ? txs.slice(-80) : []);
-    
+
     const prompt = `
       Você é um analista financeiro sênior.
       Produza um relatório claro e conciso em **português do Brasil**, com:
@@ -656,10 +574,95 @@ app.post("/bff/report", authMiddleware, async (req, res) => {
     });
 
     const reportText = response?.choices?.[0]?.message?.content || "No result";
+
+    // persistir no analytics-service
+    try {
+      const saveUrl = `${ANALYTICS_SERVICE_URL.replace(/\/$/, "")}/reports`;
+      await httpRequestWithRetry({
+        method: "post",
+        url: saveUrl,
+        data: { userId, msg: reportText }
+      });
+    } catch (e) {
+      // não falhar o fluxo principal só porque não salvou
+      logger.warn("analytics_persist_failed", { err: e?.message });
+      // if (e?.response) {
+      //   // repassa status/corpo que veio da Function (ex.: 404 not_found_or_not_owned)
+      //   // return res.status(e.response.status).json(e.response.data);
+      // }
+    }
+
     res.json({ report: reportText });
   } catch (err) {
     logger.error("openai_report_error", { err: err.message });
     res.status(500).json({ error: "report_failed", details: err.message });
+  }
+});
+
+/* BFF: quota de relatórios do usuário (select no analytics-service)
+   - Nunca deve retornar erro por falta de dados; se o service cair, devolve {limit, used:0, remaining:limit}.
+*/
+app.get("/bff/reports/quota", authMiddleware, async (req, res) => {
+  try {
+    const userId = deriveUserId(req.user);
+    if (!userId) return res.status(401).json({ error: "missing_user_id_from_token" });
+
+    const defaultLimit = Number(process.env.REPORTS_MONTHLY_LIMIT || 3);
+    const quotaUrl = `${ANALYTICS_SERVICE_URL.replace(/\/$/, "")}/reports/quota`;
+
+    try {
+      const r = await httpRequestWithRetry({
+        method: "get",
+        url: quotaUrl,
+        params: { userId }
+      });
+      const data = r?.data || {};
+      const limit = Number.isFinite(data.limit) ? data.limit : defaultLimit;
+      const used = Number.isFinite(data.used) ? data.used : 0;
+      const remaining = Math.max(0, limit - used);
+      return res.json({ limit, used, remaining });
+    } catch (err) {
+      // fallback sem erro
+      return res.json({ limit: defaultLimit, used: 0, remaining: defaultLimit });
+    }
+  } catch (err) {
+    const defaultLimit = Number(process.env.REPORTS_MONTHLY_LIMIT || 3);
+    return res.json({ limit: defaultLimit, used: 0, remaining: defaultLimit });
+  }
+});
+
+/* BFF: listar relatórios do usuário (select no analytics-service)
+   - Em qualquer falha, devolve lista vazia sem erro.
+*/
+app.get("/bff/reports", authMiddleware, async (req, res) => {
+  try {
+    const userId = deriveUserId(req.user);
+    if (!userId) return res.status(401).json({ error: "missing_user_id_from_token" });
+
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit || 10)));
+
+    const listUrl = `${ANALYTICS_SERVICE_URL.replace(/\/$/, "")}/reports`;
+    try {
+      const r = await httpRequestWithRetry({
+        method: "get",
+        url: listUrl,
+        params: { userId, page, limit }
+      });
+      const data = r?.data || {};
+      return res.json({
+        items: Array.isArray(data.items) ? data.items : [],
+        page: Number.isFinite(data.page) ? data.page : page,
+        limit: Number.isFinite(data.limit) ? data.limit : limit,
+        total: Number.isFinite(data.total) ? data.total : 0
+      });
+    } catch (err) {
+      return res.json({ items: [], page, limit, total: 0 });
+    }
+  } catch (err) {
+    const page = Math.max(1, Number(req.query?.page || 1));
+    const limit = Math.min(50, Math.max(1, Number(req.query?.limit || 10)));
+    return res.json({ items: [], page, limit, total: 0 });
   }
 });
 
