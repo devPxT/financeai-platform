@@ -1,8 +1,24 @@
 // import React, { useEffect, useMemo, useState } from "react";
-// import AiReportModal from "../components/AiReportModal";
 // import { useBff } from "../utils/api";
+// import AiReportButton from "../components/AiReportButton";
 
-// // Meses em pt-BR
+// // shadcn ui
+// import {
+//   Select,
+//   SelectContent,
+//   SelectItem,
+//   SelectTrigger,
+//   SelectValue
+// } from "../components/ui/select";
+
+// // Componentes do dashboard
+// import SummaryCards from "../components/dashboard/SummaryCards";
+// import TransactionsPieChart from "../components/dashboard/TransactionsPieChart";
+// import ExpensesPerCategory from "../components/dashboard/ExpensesPerCategory";
+// import LastTransactions from "../components/dashboard/LastTransactions";
+
+// import { filterByPeriod, computeDashboard } from "../utils/dashboard-agg";
+
 // const MONTHS = [
 //   { label: "Janeiro", value: "01" },
 //   { label: "Fevereiro", value: "02" },
@@ -35,87 +51,119 @@
 //   const url = new URL(window.location.href);
 //   url.searchParams.set("month", month);
 //   url.searchParams.set("year", year);
-//   // Atualiza a URL sem recarregar a página
 //   window.history.pushState({}, "", url.toString());
 // }
 
 // export default function Dashboard() {
 //   const api = useBff();
 //   const [{ month, year }, setPeriod] = useState(getInitialPeriodFromQS());
+//   const [allTransactions, setAllTransactions] = useState([]);
+//   const [loading, setLoading] = useState(false);
 
-//   // Anos: atual e mais 5 para trás
 //   const years = useMemo(() => {
 //     const y = new Date().getFullYear();
 //     return Array.from({ length: 6 }).map((_, i) => String(y - i));
 //   }, []);
 
-//   // Sempre que o período mudar, atualiza a URL e (depois) busca os dados do período
+//   // Busca as transações do usuário (todas) e filtra por período no cliente
+//   useEffect(() => {
+//     let ignore = false;
+//     async function load() {
+//       setLoading(true);
+//       try {
+//         // Busca as transações do usuário logado
+//         const data = await api.get("/bff/transactions");
+//         if (!ignore) setAllTransactions(Array.isArray(data) ? data : []);
+//       } catch {
+//         if (!ignore) setAllTransactions([]);
+//       } finally {
+//         if (!ignore) setLoading(false);
+//       }
+//     }
+//     load();
+//     return () => { ignore = true; };
+//   }, []); // carrega uma vez
+
+//   // Atualiza URL ao trocar período
 //   useEffect(() => {
 //     pushPeriodToURL(month, year);
-//     // TODO: Buscar transações do período selecionado (quando você quiser ligar isso)
-//     // Exemplo futuro:
-//     // api.get(`/bff/transactions?month=${month}&year=${year}`)
-//     //   .then(setTransactions)
-//     //   .catch(() => setTransactions([]));
-//     // Por enquanto apenas log:
-//     // console.log("Período selecionado:", { month, year });
-//   }, [month, year]); // eslint-disable-line react-hooks/exhaustive-deps
+//   }, [month, year]);
 
-//   function handleMonthChange(e) {
-//     const newMonth = e.target.value;
-//     setPeriod((prev) => ({ ...prev, month: newMonth }));
-//   }
-
-//   function handleYearChange(e) {
-//     const newYear = e.target.value;
-//     setPeriod((prev) => ({ ...prev, year: newYear }));
-//   }
+//   // Filtra e calcula KPIs
+//   const periodTransactions = useMemo(() => filterByPeriod(allTransactions, month, year), [allTransactions, month, year]);
+//   const dashboard = useMemo(() => computeDashboard(periodTransactions), [periodTransactions]);
 
 //   return (
-//     <div className="dashboard-page" style={{ padding: 16 }}>
-//       <div className="header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+//     <div className="flex h-full flex-col space-y-6 overflow-hidden p-6">
+//       <div className="flex justify-between">
 //         <h1 className="text-2xl font-bold">Dashboard</h1>
+//         <div className="flex items-center gap-3">
+//           <AiReportButton />
 
-//         <div className="actions" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-//           {/* Modal da IA */}
-//           <AiReportModal />
+//           <Select value={month} onValueChange={(v) => setPeriod((prev) => ({ ...prev, month: v }))}>
+//             <SelectTrigger className="w-[160px]">
+//               <SelectValue placeholder="Mês" />
+//             </SelectTrigger>
+//             <SelectContent>
+//               {MONTHS.map((m) => (
+//                 <SelectItem key={m.value} value={m.value}>
+//                   {m.label}
+//                 </SelectItem>
+//               ))}
+//             </SelectContent>
+//           </Select>
 
-//           {/* Select do mês */}
-//           <select aria-label="Selecionar mês" value={month} onChange={handleMonthChange}>
-//             {MONTHS.map((m) => (
-//               <option key={m.value} value={m.value}>{m.label}</option>
-//             ))}
-//           </select>
-
-//           {/* Select do ano */}
-//           <select aria-label="Selecionar ano" value={year} onChange={handleYearChange}>
-//             {years.map((y) => (
-//               <option key={y} value={y}>{y}</option>
-//             ))}
-//           </select>
+//           <Select value={year} onValueChange={(v) => setPeriod((prev) => ({ ...prev, year: v }))}>
+//             <SelectTrigger className="w-[120px]">
+//               <SelectValue placeholder="Ano" />
+//             </SelectTrigger>
+//             <SelectContent>
+//               {years.map((y) => (
+//                 <SelectItem key={y} value={y}>
+//                   {y}
+//                 </SelectItem>
+//               ))}
+//             </SelectContent>
+//           </Select>
 //         </div>
 //       </div>
 
-//       {/* Aqui ficarão seus componentes do Dashboard.
-//           Por enquanto, só demostrando o período atual selecionado. */}
-//       <div style={{ marginTop: 8 }}>
-//         <strong>Período atual:</strong> {MONTHS.find((m) => m.value === month)?.label} / {year}
+//       <div className="grid h-full grid-cols-[2fr,1fr] gap-6 overflow-hidden">
+//         <div className="flex flex-col gap-6 overflow-hidden">
+//           <SummaryCards
+//             balance={dashboard.balance}
+//             depositsTotal={dashboard.depositsTotal}
+//             expensesTotal={dashboard.expensesTotal}
+//             investmentsTotal={dashboard.investmentsTotal}
+//             userCanAddTransaction={true} // ajuste caso você tenha regra para limitar
+//           />
+
+//           <div className="grid h-full grid-cols-3 grid-rows-1 gap-6 overflow-hidden">
+//             <TransactionsPieChart
+//               depositsTotal={dashboard.depositsTotal}
+//               investmentsTotal={dashboard.investmentsTotal}
+//               expensesTotal={dashboard.expensesTotal}
+//               typesPercentage={dashboard.typesPercentage}
+//             />
+
+//             <ExpensesPerCategory
+//               expensesPerCategory={dashboard.totalExpensePerCategory}
+//             />
+//           </div>
+//         </div>
+
+//         <LastTransactions lastTransactions={dashboard.lastTransactions} />
 //       </div>
 
-//       {/* TODO: Renderizar seus cards, gráficos e listas com base nas transações do período selecionado */}
-//       {/* <SummaryCards ... /> */}
-//       {/* <TransactionsPieChart ... /> */}
-//       {/* <ExpensesPerCategory ... /> */}
-//       {/* <LastTransactions ... /> */}
+//       {loading && <div className="text-sm text-muted-foreground">Carregando transações...</div>}
 //     </div>
 //   );
 // }
 
 import React, { useEffect, useMemo, useState } from "react";
-import AiReportButton from "../components/AiReportButton";
 import { useBff } from "../utils/api";
+import AiReportButton from "../components/AiReportButton";
 
-// shadcn ui
 import {
   Select,
   SelectContent,
@@ -123,7 +171,13 @@ import {
   SelectTrigger,
   SelectValue
 } from "../components/ui/select";
-import { Button } from "../components/ui/button"; // caso precise no futuro
+
+import SummaryCards from "../components/dashboard/SummaryCards";
+import TransactionsPieChart from "../components/dashboard/TransactionsPieChart";
+import ExpensesPerCategory from "../components/dashboard/ExpensesPerCategory";
+import LastTransactions from "../components/dashboard/LastTransactions";
+
+import { filterByPeriod, computeDashboard } from "../utils/dashboard-agg";
 
 const MONTHS = [
   { label: "Janeiro", value: "01" },
@@ -163,59 +217,77 @@ function pushPeriodToURL(month, year) {
 export default function Dashboard() {
   const api = useBff();
   const [{ month, year }, setPeriod] = useState(getInitialPeriodFromQS());
+  const [allTransactions, setAllTransactions] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  // Anos: atual + 5 anos para trás
   const years = useMemo(() => {
     const y = new Date().getFullYear();
     return Array.from({ length: 6 }).map((_, i) => String(y - i));
   }, []);
 
-  // Atualiza URL e (futuramente) busca dados do período selecionado
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const data = await api.get("/bff/transactions");
+        if (!ignore) setAllTransactions(Array.isArray(data) ? data : []);
+      } catch {
+        if (!ignore) setAllTransactions([]);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    load();
+    return () => { ignore = true; };
+  }, []);
+
   useEffect(() => {
     pushPeriodToURL(month, year);
-    // TODO: buscar transações do período quando você quiser plugar os componentes:
-    // api.get(`/bff/transactions?month=${month}&year=${year}`)
-    //   .then(...)
-    //   .catch(...)
-  }, [month, year]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [month, year]);
+
+  const periodTransactions = useMemo(
+    () => filterByPeriod(allTransactions, month, year),
+    [allTransactions, month, year]
+  );
+  const dashboard = useMemo(
+    () => computeDashboard(periodTransactions),
+    [periodTransactions]
+  );
 
   return (
-    <div className="flex h-full flex-col space-y-6 overflow-hidden p-6">
-      <div className="flex items-center justify-between">
+    <div className="flex h-full flex-col space-y-6 overflow-hidden p-6 text-neutral-100">
+      <div className="flex justify-between">
         <h1 className="text-2xl font-bold">Dashboard</h1>
-
         <div className="flex items-center gap-3">
-          {/* Botão/Modal de IA (usa shadcn + verificação de plano premium via Clerk) */}
           <AiReportButton />
 
-          {/* Select de Mês (shadcn) */}
           <Select
             value={month}
             onValueChange={(v) => setPeriod((prev) => ({ ...prev, month: v }))}
           >
-            <SelectTrigger className="w-[160px]">
+            <SelectTrigger className="w-[160px] bg-neutral-900 text-neutral-100 border-neutral-800">
               <SelectValue placeholder="Mês" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-neutral-900 text-neutral-100 border border-neutral-800">
               {MONTHS.map((m) => (
-                <SelectItem key={m.value} value={m.value}>
+                <SelectItem key={m.value} value={m.value} className="focus:bg-neutral-800">
                   {m.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
 
-          {/* Select de Ano (shadcn) */}
           <Select
             value={year}
             onValueChange={(v) => setPeriod((prev) => ({ ...prev, year: v }))}
           >
-            <SelectTrigger className="w-[120px]">
+            <SelectTrigger className="w-[120px] bg-neutral-900 text-neutral-100 border-neutral-800">
               <SelectValue placeholder="Ano" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-neutral-900 text-neutral-100 border border-neutral-800">
               {years.map((y) => (
-                <SelectItem key={y} value={y}>
+                <SelectItem key={y} value={y} className="focus:bg-neutral-800">
                   {y}
                 </SelectItem>
               ))}
@@ -224,12 +296,33 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Espaço futuro para seus componentes de dashboard baseados no período */}
-      <div className="text-sm text-muted-foreground">
-        Período atual: {MONTHS.find((m) => m.value === month)?.label} / {year}
+      <div className="grid h-full grid-cols-[2fr,1fr] gap-6 overflow-hidden">
+        <div className="flex flex-col gap-6 overflow-hidden">
+          <SummaryCards
+            balance={dashboard.balance}
+            depositsTotal={dashboard.depositsTotal}
+            expensesTotal={dashboard.expensesTotal}
+            investmentsTotal={dashboard.investmentsTotal}
+            userCanAddTransaction={false}
+          />
+
+          <div className="grid h-full grid-cols-3 grid-rows-1 gap-6 overflow-hidden">
+            <TransactionsPieChart
+              depositsTotal={dashboard.depositsTotal}
+              investmentsTotal={dashboard.investmentsTotal}
+              expensesTotal={dashboard.expensesTotal}
+              typesPercentage={dashboard.typesPercentage}
+            />
+            <ExpensesPerCategory
+              expensesPerCategory={dashboard.totalExpensePerCategory}
+            />
+          </div>
+        </div>
+
+        <LastTransactions lastTransactions={dashboard.lastTransactions} />
       </div>
 
-      {/* TODO: SummaryCards, Charts, Lists... quando você enviar os requisitos de cálculo */}
+      {loading && <div className="text-sm text-neutral-400">Carregando transações...</div>}
     </div>
   );
 }
