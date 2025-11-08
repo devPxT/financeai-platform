@@ -10,7 +10,7 @@ export default function Login() {
 
   useEffect(() => {
     if (isLoaded && isSignedIn) {
-      navigate("/home", { replace: true });
+      navigate("/dashboard", { replace: true });
     }
   }, [isLoaded, isSignedIn, navigate]);
 
@@ -31,7 +31,7 @@ export default function Login() {
           monitorar suas movimentações e oferecer insights personalizados,
           facilitando o controle do seu orçamento.
         </p>
-        <SignInButton mode="modal" redirectUrl="/home">
+        <SignInButton mode="modal" redirectUrl="/dashboard">
           <Button variant="default">
             <LogIn className="mr-2 h-4 w-4" />
             Fazer login ou criar conta

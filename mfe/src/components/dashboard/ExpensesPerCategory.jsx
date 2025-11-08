@@ -4,7 +4,7 @@
 
 // export default function ExpensesPerCategory({ expensesPerCategory }) {
 //   return (
-//     <div className="col-span-2 h-full rounded-md border pb-6 overflow-hidden">
+//     <div className="col-span-2 h-full rounded-md border bg-neutral-900 border-neutral-800 text-neutral-100 pb-6 overflow-hidden">
 //       <CardHeader>
 //         <CardTitle className="font-bold">Gastos por Categoria</CardTitle>
 //       </CardHeader>
@@ -32,7 +32,7 @@ export default function ExpensesPerCategory({ expensesPerCategory }) {
   return (
     <div className="col-span-2 h-full rounded-md border bg-neutral-900 border-neutral-800 text-neutral-100 pb-6 overflow-hidden">
       <CardHeader>
-        <CardTitle className="font-bold">Gastos por Categoria</CardTitle>
+        <CardTitle className="font-bold">Transações por Categoria</CardTitle>
       </CardHeader>
 
       <CardContent className="space-y-6">
@@ -45,6 +45,9 @@ export default function ExpensesPerCategory({ expensesPerCategory }) {
             <Progress value={category.percentageOfTotal} />
           </div>
         ))}
+        {expensesPerCategory.length === 0 && (
+          <p className="text-sm text-neutral-400">Nenhuma transação no período.</p>
+        )}
       </CardContent>
     </div>
   );

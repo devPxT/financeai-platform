@@ -1,9 +1,9 @@
 // Utilitários para filtrar e agregar as transações por período e calcular os KPIs do dashboard.
 
 export function normalizeType(t) {
-  const v = String(t || "").toLowerCase();
-  // Compatibilidade com sua base
-  if (v === "income" || v === "depósito" || v === "deposito" || v === "deposit" || v === "deposito") return "DEPOSIT";
+  const v = String(t || "").trim().toLowerCase();
+  // Compatibilidade com variações
+  if (v === "income" || v === "depósito" || v === "deposito" || v === "deposit") return "DEPOSIT";
   if (v === "expense" || v === "despesa") return "EXPENSE";
   if (v === "investment" || v === "investimento") return "INVESTMENT";
   return "UNKNOWN";
@@ -53,20 +53,25 @@ export function computeDashboard(transactionsOfPeriod) {
     INVESTMENT: pct(investmentsTotal)
   };
 
-  // Agrupa despesas por categoria
+  // Agrupa TODAS as transações (exceto UNKNOWN) por categoria
   const byCat = new Map();
   for (const t of txs) {
-    if (normalizeType(t.type) !== "EXPENSE") continue;
-    const cat = String(t.category || "Outros");
+    const normType = normalizeType(t.type);
+    if (normType === "UNKNOWN") continue;
+    const cat = String(t.category || "Outros").trim() || "Outros";
     const cur = byCat.get(cat) || 0;
     byCat.set(cat, cur + toNumber(t.amount));
   }
-  const totalExpense = expensesTotal || 0;
+
+  const totalAll = depositsTotal + expensesTotal + investmentsTotal;
   const totalExpensePerCategory = Array.from(byCat.entries()).map(([category, totalAmount]) => ({
     category,
     totalAmount: toNumber(totalAmount),
-    percentageOfTotal: totalExpense > 0 ? Math.round((toNumber(totalAmount) / totalExpense) * 100) : 0
+    percentageOfTotal: totalAll > 0 ? Math.round((toNumber(totalAmount) / totalAll) * 100) : 0
   }));
+
+  // Ordena por maior valor
+  totalExpensePerCategory.sort((a, b) => b.totalAmount - a.totalAmount);
 
   // Últimas 15 transações do período
   const lastTransactions = [...txs]
@@ -79,6 +84,7 @@ export function computeDashboard(transactionsOfPeriod) {
     investmentsTotal,
     expensesTotal,
     typesPercentage,
+    // Mantém o nome antigo para compatibilidade (agora contém todas as categorias)
     totalExpensePerCategory,
     lastTransactions
   };

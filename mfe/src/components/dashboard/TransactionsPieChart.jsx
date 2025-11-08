@@ -88,7 +88,7 @@ export default function TransactionsPieChart({ typesPercentage, depositsTotal, i
             <PieChart>
               <Tooltip
                 contentStyle={{
-                  background: "#0b0b0b",
+                  background: "#fff",
                   border: "1px solid #222",
                   color: "#fff"
                 }}

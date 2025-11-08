@@ -5,8 +5,10 @@ import cors from "cors";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 import swaggerUi from "swagger-ui-express";
-import { swaggerSpec } from "./config/swagger.js";
-import transactionsRouter from "./routes/transactions.routes.js";
+// import { swaggerSpec } from "./config/swagger.js";
+// import transactionsRouter from "./routes/transactions.routes.js";
+import { swaggerSpec } from "./features/config/swagger.js";
+import transactionsRouter from "./features/routes/transactions.routes.js";
 
 dotenv.config();
 const PORT = process.env.PORT || 4100;
