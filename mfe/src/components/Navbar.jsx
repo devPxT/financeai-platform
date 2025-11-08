@@ -16,7 +16,7 @@ export default function Navbar() {
         <Link to="/home" className="flex items-center">
           <img src="/images/logo.svg" width={173} height={39} alt="Finance AI" />
         </Link>
-        <Link to="/home" className={linkClass("/home")}>
+        <Link to="/dashboard" className={linkClass("/dashboard")}>
           Dashboard
         </Link>
         <Link to="/transactions" className={linkClass("/transactions")}>
