@@ -1,0 +1,118 @@
+openapi: 3.0.3
+info:
+  title: Analytics Service
+  version: 1.0.0
+  description: |
+    Microserviço de relatórios e quota de geração de relatórios (persistência em Azure SQL).
+servers:
+  - url: http://localhost:4200
+    description: Local Dev
+tags:
+  - name: Reports
+    description: CRUD básico de relatórios (criação e listagem)
+  - name: Quota
+    description: Consultas de uso mensal
+security:
+  - bearerAuth: []
+paths:
+  /reports:
+    get:
+      tags: [Reports]
+      summary: Listar relatórios do usuário
+      parameters:
+        - in: query
+          name: userId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: Página de relatórios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Report'
+        '400':
+          description: missing_userId
+        '500':
+          description: Erro de listagem
+    post:
+      tags: [Reports]
+      summary: Criar relatório
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportCreate'
+      responses:
+        '201':
+          description: Criado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '400':
+          description: missing_userId_or_msg
+        '500':
+          description: create_failed
+  /reports/quota:
+    get:
+      tags: [Quota]
+      summary: Quota mensal de relatórios
+      parameters:
+        - in: query
+          name: userId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Informações de quota
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportQuota'
+        '400':
+          description: missing_userId
+        '500':
+          description: failure
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Report:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        createdAt: { type: string, format: date-time }
+        title: { type: string }
+        msg: { type: string }
+    ReportCreate:
+      type: object
+      required: [userId, msg]
+      properties:
+        userId: { type: string }
+        msg: { type: string }
+    ReportQuota:
+      type: object
+      properties:
+        limit: { type: integer }
+        used: { type: integer }
+        remaining: { type: integer }

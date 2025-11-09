@@ -1,0 +1,71 @@
+openapi: 3.0.3
+info:
+  title: FinanceAI Azure Functions
+  version: 1.0.0
+  description: |
+    Especificação mínima dos endpoints expostos por Azure Functions (ex.: criação assíncrona de transações).
+servers:
+  - url: http://localhost:4300
+    description: Local Functions Host
+tags:
+  - name: Transactions (Function)
+    description: Funções de manipulação de transações
+security:
+  - bearerAuth: []
+paths:
+  /createTransactions:
+    post:
+      tags: [Transactions (Function)]
+      summary: Criar transação via Function
+      description: Encaminha para transactions-service (modo assíncrono segundo configuração do BFF).
+      parameters:
+        - in: query
+          name: mock
+          schema: { type: boolean }
+          description: Flag de teste interno (se implementado).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransactionCreate'
+      responses:
+        '200':
+          description: Criada ou encaminhada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          description: missing_fields ou payload inválido
+        '500':
+          description: internal_error
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    TransactionCreate:
+      type: object
+      required: [userId, name, type, category, paymentMethod, amount]
+      properties:
+        userId: { type: string }
+        name: { type: string }
+        type: { type: string }
+        category: { type: string }
+        paymentMethod: { type: string }
+        amount: { type: number }
+        date: { type: string, format: date-time }
+    Transaction:
+      type: object
+      properties:
+        _id: { type: string }
+        userId: { type: string }
+        name: { type: string }
+        type: { type: string }
+        category: { type: string }
+        paymentMethod: { type: string }
+        amount: { type: number }
+        date: { type: string, format: date-time }

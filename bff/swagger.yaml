@@ -1,0 +1,225 @@
+openapi: 3.0.3
+info:
+  title: FinanceAI BFF
+  version: 1.0.0
+  description: |
+    Backend For Frontend que agrega e orquestra chamadas aos micro-serviços (transactions-service, analytics-service) e Azure Functions.
+servers:
+  - url: http://localhost:4000
+    description: Local Dev
+tags:
+  - name: BFF Transactions
+    description: Operações de transações via BFF
+  - name: BFF Reports
+    description: Operações de relatórios via BFF
+  - name: AI
+    description: Geração de relatório OpenAI
+  - name: Internal
+    description: Endpoints administrativos internos
+security:
+  - bearerAuth: []
+paths:
+  /bff/transactions:
+    get:
+      tags: [BFF Transactions]
+      summary: Listar transações do usuário
+      parameters:
+        - in: query
+          name: userId
+          schema: { type: string }
+      responses:
+        '200':
+          description: Lista de transações (proxy do transactions-service)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Transaction' }
+        '401':
+          description: missing_user_id_from_token
+        '500':
+          description: Erro
+    post:
+      tags: [BFF Transactions]
+      summary: Criar transação (sincrono ou async)
+      parameters:
+        - in: query
+          name: mode
+          schema:
+            type: string
+            enum: [sync, async]
+            default: sync
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransactionCreate' }
+      responses:
+        '201':
+          description: Criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '400':
+          description: missing_fields
+        '401':
+          description: missing_user_id_from_token
+        '500':
+          description: Erro
+  /bff/transactions/{id}:
+    delete:
+      tags: [BFF Transactions]
+      summary: Deletar transação
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Deletada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        '404':
+          description: not_found
+        '401':
+          description: missing_user_id_from_token
+        '500':
+          description: Erro
+  /bff/report:
+    post:
+      tags: [AI]
+      summary: Gerar relatório com OpenAI e persistir
+      description: Usa últimas transações e gera um relatório financeiro, persistindo no analytics-service.
+      responses:
+        '200':
+          description: Texto do relatório
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report: { type: string }
+        '401':
+          description: missing_user_id_from_token
+        '429':
+          description: monthly_limit_reached
+        '500':
+          description: report_failed
+  /bff/reports:
+    get:
+      tags: [BFF Reports]
+      summary: Listar relatórios do usuário
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+      responses:
+        '200':
+          description: Lista paginada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Report' }
+                  page: { type: integer }
+                  limit: { type: integer }
+        '401':
+          description: missing_user_id_from_token
+        '500':
+          description: Erro ou lista vazia fallback
+  /bff/reports/quota:
+    get:
+      tags: [BFF Reports]
+      summary: Quota mensal de relatórios
+      responses:
+        '200':
+          description: Quota atual
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReportQuota' }
+        '401':
+          description: missing_user_id_from_token
+        '500':
+          description: fallback retornando limit/remaining
+  /internal/seed:
+    post:
+      tags: [Internal]
+      summary: Disparar seed nos micro-serviços
+      x-internal: true
+      parameters:
+        - in: header
+          name: x-internal-secret
+          schema: { type: string }
+          required: true
+      responses:
+        '200':
+          description: Resultado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+        '401':
+          description: unauthorized
+        '500':
+          description: Erro
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Transaction:
+      type: object
+      properties:
+        _id: { type: string }
+        userId: { type: string }
+        name: { type: string }
+        type: { type: string }
+        category: { type: string }
+        paymentMethod: { type: string }
+        amount: { type: number }
+        date: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TransactionCreate:
+      type: object
+      required: [userId, name, type, category, paymentMethod, amount]
+      properties:
+        userId: { type: string }
+        name: { type: string }
+        type: { type: string }
+        category: { type: string }
+        paymentMethod: { type: string }
+        amount: { type: number }
+        date: { type: string, format: date-time }
+    Report:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        title: { type: string }
+        msg: { type: string }
+        createdAt: { type: string, format: date-time }
+    ReportQuota:
+      type: object
+      properties:
+        limit: { type: integer }
+        used: { type: integer }
+        remaining: { type: integer }
