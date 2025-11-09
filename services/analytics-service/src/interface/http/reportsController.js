@@ -1,3 +1,4 @@
+// Controller – adiciona handler de quota
 export function buildReportsController(useCases) {
   return {
     create: async (req, res) => {
@@ -11,6 +12,7 @@ export function buildReportsController(useCases) {
         res.status(500).json({ error: "create_failed", details: err.message });
       }
     },
+
     list: async (req, res) => {
       try {
         const userId = String(req.query?.userId || "").trim();
@@ -21,6 +23,19 @@ export function buildReportsController(useCases) {
         res.json(data);
       } catch (err) {
         res.status(500).json({ error: "list_failed", details: err.message });
+      }
+    },
+
+    // NOVO: GET /reports/quota
+    quota: async (req, res) => {
+      try {
+        const userId = String(req.query?.userId || "").trim();
+        if (!userId) return res.status(400).json({ error: "missing_userId" });
+        const data = await useCases.quota({ userId });
+        res.json(data);
+      } catch (err) {
+        if (err.code === "missing_userId") return res.status(400).json({ error: err.code });
+        res.status(500).json({ error: "quota_failed", details: err.message });
       }
     }
   };

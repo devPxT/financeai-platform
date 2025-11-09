@@ -1,4 +1,6 @@
+// Repositório SQL (infra) – adiciona método de contagem mensal e corrige import de crypto
 import sql from "mssql";
+import crypto from "node:crypto";
 import { ReportEntity } from "../domain/ReportEntity.js";
 
 function getConfig() {
@@ -8,7 +10,10 @@ function getConfig() {
     server: process.env.AZURE_SQL_SERVER,
     database: process.env.AZURE_SQL_DATABASE,
     port: Number(process.env.AZURE_SQL_PORT || 1433),
-    options: { encrypt: true }
+    options: {
+      encrypt: true,
+      trustServerCertificate: (process.env.AZURE_SQL_TRUST_CERT || "false").toLowerCase() === "true"
+    }
   };
 }
 
@@ -17,7 +22,7 @@ async function run(q, inputs = []) {
   try {
     const req = pool.request();
     for (const i of inputs) {
-      if (i.type) req.input(i.name, i.type, i.value);
+      if (Object.prototype.hasOwnProperty.call(i, "type")) req.input(i.name, i.type, i.value);
       else req.input(i.name, i.value);
     }
     return await req.query(q);
@@ -30,21 +35,22 @@ export class SqlReportRepository {
   async create({ userId, title, msg }) {
     const entity = new ReportEntity({ userId, title, msg });
     entity.validate();
+
+    const id = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
     const q = `
       INSERT INTO dbo.Reports (id, userId, title, msg)
       OUTPUT inserted.id, inserted.userId, inserted.createdAt, inserted.title, inserted.msg
       VALUES (@id, @userId, @title, @msg);
     `;
-    const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
-    const sqlLib = sql;
     const inputs = [
-      { name: "id", type: sqlLib.VarChar(50), value: id },
-      { name: "userId", type: sqlLib.VarChar(100), value: userId },
-      { name: "title", type: sqlLib.NVarChar(200), value: title },
-      { name: "msg", type: sqlLib.NVarChar(sqlLib.MAX), value: msg }
+      { name: "id", type: sql.VarChar(50), value: id },
+      { name: "userId", type: sql.VarChar(100), value: userId },
+      { name: "title", type: sql.NVarChar(200), value: title },
+      { name: "msg", type: sql.NVarChar(sql.MAX), value: msg }
     ];
+
     const rs = await run(q, inputs);
-    const row = rs.recordset?.[0];
+    const row = rs?.recordset?.[0];
     return new ReportEntity({
       id: row?.id || id,
       userId,
@@ -56,6 +62,7 @@ export class SqlReportRepository {
 
   async list({ userId, page = 1, limit = 10 }) {
     const offset = (page - 1) * limit;
+
     const countQ = `SELECT COUNT(1) AS total FROM dbo.Reports WHERE userId=@userId`;
     const dataQ = `
       SELECT id, userId, createdAt, title, msg
@@ -64,24 +71,44 @@ export class SqlReportRepository {
       ORDER BY createdAt DESC
       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
     `;
-    const sqlLib = sql;
-    const countRs = await run(countQ, [{ name: "userId", type: sqlLib.VarChar(100), value: userId }]);
-    const total = Number(countRs.recordset?.[0]?.total || 0);
+
+    const countRs = await run(countQ, [{ name: "userId", type: sql.VarChar(100), value: userId }]);
+    const total = Number(countRs?.recordset?.[0]?.total || 0);
+
     const dataRs = await run(dataQ, [
-      { name: "userId", type: sqlLib.VarChar(100), value: userId },
-      { name: "offset", type: sqlLib.Int, value: offset },
-      { name: "limit", type: sqlLib.Int, value: limit }
+      { name: "userId", type: sql.VarChar(100), value: userId },
+      { name: "offset", type: sql.Int, value: offset },
+      { name: "limit", type: sql.Int, value: limit }
     ]);
-    const items = (dataRs.recordset || []).map(
+
+    const items = (dataRs?.recordset || []).map(
       (r) =>
         new ReportEntity({
           id: r.id,
-            userId: r.userId,
-            title: r.title,
-            msg: r.msg,
-            createdAt: r.createdAt
-          })
+          userId: r.userId,
+          title: r.title,
+          msg: r.msg,
+          createdAt: r.createdAt
+        })
     );
+
     return { total, items, page, limit };
+  }
+
+  // NOVO: contagem de relatórios desde o 1º dia do mês UTC atual
+  async countReportsFromUtcMonthStart(userId) {
+    const q = `
+      SELECT COUNT(1) AS used
+      FROM dbo.Reports
+      WHERE userId = @userId
+        AND createdAt >= DATETIMEFROMPARTS(
+              YEAR(SYSUTCDATETIME()),
+              MONTH(SYSUTCDATETIME()),
+              1,0,0,0,0
+            );
+    `;
+    const inputs = [{ name: "userId", type: sql.VarChar(100), value: userId }];
+    const rs = await run(q, inputs);
+    return Number(rs?.recordset?.[0]?.used || 0);
   }
 }
