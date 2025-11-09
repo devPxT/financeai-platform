@@ -1,0 +1,11 @@
+@startuml
+package "domain" as D
+package "application" as A
+package "infrastructure" as I
+package "interface" as F
+
+A --> D
+I --> A
+I --> D
+F --> A
+@enduml

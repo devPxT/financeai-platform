@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "arch:test": "jest --config architecture/jest.arch.config.cjs"
   },
   "dependencies": {
     "body-parser": "^1.20.2",
@@ -17,6 +18,11 @@
     "swagger-ui-express": "^4.6.3"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "@types/jest": "^30.0.0",
+    "jest": "^30.2.0",
+    "nodemon": "^3.0.1",
+    "ts-jest": "^29.4.5",
+    "tsarch": "^5.4.1",
+    "typescript": "^5.9.3"
   }
 }
