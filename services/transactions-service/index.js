@@ -5,8 +5,7 @@ import morgan from "morgan";
 import cors from "cors";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
-import swaggerUi from "swagger-ui-express";
-import { swaggerSpec } from "./features/config/swagger.js";
+// import swaggerUi from "swagger-ui-express";
 import { buildAppContainer } from "./src/composition/root.js";
 
 dotenv.config();
@@ -32,7 +31,7 @@ const { routes, controller } = buildAppContainer();
 // Rotas
 app.use("/transactions", routes);
 app.post("/internal/seed", controller.seed);
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.use((err, _req, res, _next) => {
   console.error("Unhandled:", err);

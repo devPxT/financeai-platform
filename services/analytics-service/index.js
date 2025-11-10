@@ -3,8 +3,8 @@ import cors from "cors";
 import morgan from "morgan";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
-import swaggerUi from "swagger-ui-express";
-import { swaggerSpec } from "./features/config/swagger.js";
+// import swaggerUi from "swagger-ui-express";
+// import { swaggerSpec } from "./features/config/swagger.js";
 import { buildAnalyticsContainer } from "./src/composition/root.js";
 
 dotenv.config();
@@ -18,7 +18,7 @@ app.use(morgan("dev"));
 const { routes } = buildAnalyticsContainer();
 
 app.use("/reports", routes);
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+// app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 app.use((err, _req, res, _next) => {
   console.error("unhandled_error", err);

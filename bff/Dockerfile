@@ -1,20 +1,17 @@
-# bff/Dockerfile
-FROM node:18-alpine
-
-# workdir
+FROM node:18-alpine AS deps
 WORKDIR /app
-
-# copiar package.json e package-lock.json primeiro para otimizar cache
 COPY package*.json ./
+RUN npm ci
 
-# instalar apenas dependências de produção (mais leve)
-RUN npm ci --only=production
-
-# copiar o restante da app
+FROM node:18-alpine AS prod
+WORKDIR /app
+ENV NODE_ENV=production
+# Copia node_modules prontos
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# expor porta que o BFF usa (configure se for outra)
+# Segurança: criar usuário não-root
+RUN addgroup -S app && adduser -S app -G app
+USER app
 EXPOSE 4000
-
-# entrypoint
+# Ajuste se o arquivo principal é bff.js
 CMD ["node", "bff.js"]

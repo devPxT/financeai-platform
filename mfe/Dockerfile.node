@@ -1,0 +1,46 @@
+FROM node:18-alpine AS build
+WORKDIR /app
+
+# Dependências
+COPY package*.json ./
+RUN npm ci
+
+# Código fonte
+COPY . .
+
+# Build args para Vite (serão incorporados no bundle)
+ARG VITE_BFF_URL
+ARG VITE_CLERK_PUBLISHABLE_KEY
+ARG VITE_STRIPE_PUBLISHABLE_KEY
+ARG VITE_DEMO_USER_TOKEN
+ARG VITE_USE_DEMO_AUTH
+
+ENV VITE_BFF_URL=$VITE_BFF_URL \
+    VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY \
+    VITE_STRIPE_PUBLISHABLE_KEY=$VITE_STRIPE_PUBLISHABLE_KEY \
+    VITE_DEMO_USER_TOKEN=$VITE_DEMO_USER_TOKEN \
+    VITE_USE_DEMO_AUTH=$VITE_USE_DEMO_AUTH
+
+RUN npm run build
+
+# -------- Runtime --------
+FROM node:18-alpine
+WORKDIR /app
+ENV NODE_ENV=development
+
+# Copia somente dependências de produção (se quiser otimizar)
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copia build
+COPY --from=build /app/dist ./dist
+
+# Instala 'serve' para servir estático
+RUN npm i --only=production serve
+
+# Porta interna (mantenha 3000 para evitar precisar de root)
+EXPOSE 3000
+
+# Comando final
+# CMD ["npx", "serve", "dist", "-l", "3000"]
+CMD ["npx", "serve", "-s", "dist", "-l", "3000"]
