@@ -1,6 +1,8 @@
 // Repositório concreto (infra) - única parte que conhece mongoose
-import Transaction from "../../features/models/Transaction.js"; // reaproveitando schema existente
+// import Transaction from "../models/Transaction.js"; // reaproveitando schema existente
+import Transaction from "../models/Transaction.js";
 import { TransactionEntity } from "../domain/TransactionEntity.js";
+
 
 export class MongooseTransactionRepository {
   async list({ userId, from, to, limit = 300 }) {

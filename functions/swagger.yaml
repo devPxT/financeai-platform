@@ -1,63 +1,60 @@
 openapi: 3.0.3
 info:
-  title: FinanceAI Azure Functions
-  version: 1.0.0
+  title: FinanceAI Transactions Functions
+  version: 1.1.0
   description: |
-    Especificação mínima dos endpoints expostos por Azure Functions (ex.: criação assíncrona de transações).
+    Azure Functions HTTP endpoints para operações de transações.
+    Autenticação: nível "function" (enviar chave via query ?code= ou header x-functions-key).
+    Identificação de usuário: header x-user-id (create aceita também userId no corpo).
 servers:
-  - url: http://localhost:4300
+  - url: http://localhost:4300/api
     description: Local Functions Host
+  - url: https://transactions-gnghafepbpd9cuat.canadacentral-01.azurewebsites.net/api
+    description: Produção
 tags:
-  - name: Transactions (Function)
-    description: Funções de manipulação de transações
-security:
-  - bearerAuth: []
-paths:
-  /createTransactions:
-    post:
-      tags: [Transactions (Function)]
-      summary: Criar transação via Function
-      description: Encaminha para transactions-service (modo assíncrono segundo configuração do BFF).
-      parameters:
-        - in: query
-          name: mock
-          schema: { type: boolean }
-          description: Flag de teste interno (se implementado).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TransactionCreate'
-      responses:
-        '200':
-          description: Criada ou encaminhada
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Transaction'
-        '400':
-          description: missing_fields ou payload inválido
-        '500':
-          description: internal_error
+  - name: Transactions
+    description: Funções de criação, atualização e exclusão de transações
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    functionKeyQuery:
+      type: apiKey
+      in: query
+      name: code
+      description: Chave de função via query string (?code=...)
+    functionKeyHeader:
+      type: apiKey
+      in: header
+      name: x-functions-key
+      description: Chave de função via header
   schemas:
     TransactionCreate:
       type: object
       required: [userId, name, type, category, paymentMethod, amount]
       properties:
-        userId: { type: string }
+        userId: { type: string, example: "demo" }
+        name: { type: string, example: "Almoço" }
+        type:
+          type: string
+          example: "Despesa"
+          description: "Tipos aceitos (no BFF): Despesa, Depósito, Investimento"
+        category: { type: string, example: "Alimentação" }
+        paymentMethod: { type: string, example: "Pix" }
+        amount: { type: number, example: 45.9 }
+        date:
+          type: string
+          format: date
+          example: "2025-11-10"
+          description: "Opcional; YYYY-MM-DD ou ISO. Converte internamente."
+    TransactionUpdate:
+      type: object
+      description: Campos parciais permitidos para atualização.
+      properties:
         name: { type: string }
+        amount: { type: number }
         type: { type: string }
         category: { type: string }
         paymentMethod: { type: string }
-        amount: { type: number }
-        date: { type: string, format: date-time }
+        date: { type: string, format: date }
     Transaction:
       type: object
       properties:
@@ -68,4 +65,197 @@ components:
         category: { type: string }
         paymentMethod: { type: string }
         amount: { type: number }
-        date: { type: string, format: date-time }
+        date:
+          type: string
+          format: date-time
+          description: "Armazenado como Date completo (pode representar dia com hora padrão)."
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    DeleteResult:
+      type: object
+      properties:
+        ok: { type: boolean, example: true }
+        deletedCount: { type: integer, example: 1 }
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+        details: { type: string }
+        allow:
+          type: array
+          items: { type: string }
+paths:
+  /createTransactions:
+    post:
+      tags: [Transactions]
+      summary: Criar transação
+      description: |
+        Cria um documento de transação em MongoDB.
+        Valida campos obrigatórios: userId (header x-user-id ou body), name, type, category, paymentMethod, amount.
+      security:
+        - functionKeyQuery: []
+        - functionKeyHeader: []
+      parameters:
+        - in: header
+          name: x-user-id
+          schema: { type: string }
+          required: false
+          description: "ID do usuário. Se ausente, será lido de body.userId."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransactionCreate' }
+      responses:
+        '201':
+          description: Transação criada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '400':
+          description: missing_or_invalid_fields
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: internal_error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /updateTransactions/{id}:
+    put:
+      tags: [Transactions]
+      summary: Atualizar transação por ID
+      description: |
+        Atualiza campos permitidos. Requer x-user-id no header.
+        Retorna 404 se não encontrar transação do usuário.
+      security:
+        - functionKeyQuery: []
+        - functionKeyHeader: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+          description: "ID (_id) da transação (ObjectId ou string compatível)."
+        - in: header
+          name: x-user-id
+          required: true
+          schema: { type: string }
+          description: "ID do usuário dono da transação."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransactionUpdate' }
+      responses:
+        '200':
+          description: Transação atualizada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '400':
+          description: missing_id_param | valor_invalido | data_invalida | no_fields_to_update
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: missing_user_id
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: not_found_or_not_owned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: internal_error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+    patch:
+      tags: [Transactions]
+      summary: Atualizar transação (parcial)
+      description: "Semântica idêntica ao PUT; aceita PATCH por conveniência."
+      security:
+        - functionKeyQuery: []
+        - functionKeyHeader: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: header
+          name: x-user-id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TransactionUpdate' }
+      responses:
+        '200':
+          description: Transação atualizada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Transaction' }
+        '400':
+          description: missing_id_param | valor_invalido | data_invalida | no_fields_to_update
+        '401':
+          description: missing_user_id
+        '404':
+          description: not_found_or_not_owned
+        '500':
+          description: internal_error
+  /deleteTransactions/{id}:
+    delete:
+      tags: [Transactions]
+      summary: Excluir transação
+      description: |
+        Remove transação pertencente ao usuário informado (x-user-id).
+        ID deve ser um ObjectId válido (forma string compatível).
+      security:
+        - functionKeyQuery: []
+        - functionKeyHeader: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+          description: "ObjectId em string."
+        - in: header
+          name: x-user-id
+          required: true
+          schema: { type: string }
+          description: "ID do usuário dono da transação."
+      responses:
+        '200':
+          description: Excluído
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DeleteResult' }
+        '400':
+          description: missing_id_param | invalid_id
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: missing_user_id
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: not_found_or_not_owned
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: internal_error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+security:
+  - functionKeyQuery: []
+  - functionKeyHeader: []

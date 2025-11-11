@@ -1,20 +1,20 @@
 openapi: 3.0.3
 info:
   title: Transactions Service
-  version: 1.0.0
+  version: 1.0.1
   description: |
     Microserviço responsável pelo CRUD de transações financeiras.
     Campos obrigatórios: userId, name, type, category, paymentMethod, amount.
 servers:
   - url: http://localhost:4100
     description: Local Dev
+  - url: https://financeaitransactions-djaggnewe5d6agah.canadacentral-01.azurewebsites.net
+    description: Produção
 tags:
   - name: Transactions
     description: CRUD de transações
   - name: Internal
     description: Endpoints internos/seed
-security:
-  - bearerAuth: []
 paths:
   /transactions:
     get:
@@ -164,11 +164,6 @@ paths:
         '500':
           description: Erro interno
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
   schemas:
     Transaction:
       type: object

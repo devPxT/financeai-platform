@@ -5,7 +5,7 @@ import bodyParser from "body-parser";
 import dotenv from "dotenv";
 // import swaggerUi from "swagger-ui-express";
 // import { swaggerSpec } from "./features/config/swagger.js";
-import { buildAnalyticsContainer } from "./src/composition/root.js";
+import { buildAnalyticsContainer } from "./features/analytics/composition/root.js";
 
 dotenv.config();
 const PORT = process.env.PORT || 4200;

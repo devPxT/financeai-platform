@@ -17,70 +17,70 @@ describe("Transactions Service - Arquitetura (tsarch)", () => {
   const has = (rel: string) => fs.existsSync(path.join(ROOT, rel));
 
   it("domain não deve depender de interface", async () => {
-    if (!(has("src/domain") && has("src/interface"))) return;
+    if (!(has("features/transactions/domain") && has("features/transactions/interface"))) return;
 
     const rule = filesOfProject()
-      .inFolder("src/domain")
+      .inFolder("features/transactions/domain")
       .shouldNot()
       .dependOnFiles()
-      .inFolder("src/interface");
+      .inFolder("features/transactions/interface");
 
     await expect(rule).toPassAsync();
   });
 
   it("domain não deve depender de infrastructure", async () => {
-    if (!(has("src/domain") && has("src/infrastructure"))) return;
+    if (!(has("features/transactions/domain") && has("features/transactions/infrastructure"))) return;
 
     const rule = filesOfProject()
-      .inFolder("src/domain")
+      .inFolder("features/transactions/domain")
       .shouldNot()
       .dependOnFiles()
-      .inFolder("src/infrastructure");
+      .inFolder("features/transactions/infrastructure");
 
     await expect(rule).toPassAsync();
   });
 
   it("application não deve depender de interface", async () => {
-    if (!(has("src/application") && has("src/interface"))) return;
+    if (!(has("features/transactions/application") && has("features/transactions/interface"))) return;
 
     const rule = filesOfProject()
-      .inFolder("src/application")
+      .inFolder("features/transactions/application")
       .shouldNot()
       .dependOnFiles()
-      .inFolder("src/interface");
+      .inFolder("features/transactions/interface");
 
     await expect(rule).toPassAsync();
   });
 
   it("application não deve depender de infrastructure", async () => {
-    if (!(has("src/application") && has("src/infrastructure"))) return;
+    if (!(has("features/transactions/application") && has("features/transactions/infrastructure"))) return;
 
     const rule = filesOfProject()
-      .inFolder("src/application")
+      .inFolder("features/transactions/application")
       .shouldNot()
       .dependOnFiles()
-      .inFolder("src/infrastructure");
+      .inFolder("features/transactions/infrastructure");
 
     await expect(rule).toPassAsync();
   });
 
   it("interface não deve depender de infrastructure", async () => {
-    if (!(has("src/interface") && has("src/infrastructure"))) return;
+    if (!(has("features/transactions/interface") && has("features/transactions/infrastructure"))) return;
 
     const rule = filesOfProject()
-      .inFolder("src/interface")
+      .inFolder("features/transactions/interface")
       .shouldNot()
       .dependOnFiles()
-      .inFolder("src/infrastructure");
+      .inFolder("features/transactions/infrastructure");
 
     await expect(rule).toPassAsync();
   });
 
   it("domain deve ser livre de ciclos", async () => {
-    if (!has("src/domain")) return;
+    if (!has("features/transactions/domain")) return;
 
     const rule = filesOfProject()
-      .inFolder("src/domain")
+      .inFolder("features/transactions/domain")
       .should()
       .beFreeOfCycles();
 
@@ -88,10 +88,10 @@ describe("Transactions Service - Arquitetura (tsarch)", () => {
   });
 
   it("application deve ser livre de ciclos", async () => {
-    if (!has("src/application")) return;
+    if (!has("features/transactions/application")) return;
 
     const rule = filesOfProject()
-      .inFolder("src/application")
+      .inFolder("features/transactions/application")
       .should()
       .beFreeOfCycles();
 

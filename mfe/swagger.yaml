@@ -1,23 +1,53 @@
 openapi: 3.0.3
 info:
-  title: FinanceAI Frontend (MFE) API Reference
-  version: 1.0.0
+  title: FinanceAI Micro Frontend (Informational + Frontend Usage)
+  version: 1.1.0
   description: |
-    Arquivo OpenAPI colocado no MFE para documentação das rotas consumidas do BFF e micro-serviços.
-    Este projeto não hospeda endpoints próprios, mas aqui estão as chamadas típicas que o frontend realiza.
+    O MFE é uma SPA (React + Vite) e não expõe API REST própria.
+    Este documento registra:
+      - Endpoint público do MFE
+      - Dependências de build (variáveis VITE_*)
+      - Operações do BFF que o MFE consome ("Frontend Usage")
 servers:
+  - url: https://financeai-f7erachbaqgfhubs.canadacentral-01.azurewebsites.net
+    description: Produção (SPA)
+  - url: http://localhost:3000
+    description: Local Dev (SPA)
+  - url: https://financeaibff-e4frhjfnadhybtfy.canadacentral-01.azurewebsites.net
+    description: Produção (BFF consumido pelo MFE)
   - url: http://localhost:4000
-    description: BFF Local
+    description: Local Dev (BFF)
 tags:
+  - name: Frontend
+    description: Rotas públicas do container do MFE (informativas)
   - name: Frontend Usage
-    description: Operações que o MFE consome
+    description: Operações do BFF que o MFE consome
 security:
   - bearerAuth: []
 paths:
+  /:
+    get:
+      tags: [Frontend]
+      summary: Entrypoint da SPA
+      description: Retorna index.html do build (React/Vite).
+      responses:
+        '200':
+          description: HTML inicial
+  /health:
+    get:
+      tags: [Frontend]
+      summary: (Opcional) Health do container estático
+      description: Apenas se implementado no host do MFE.
+      responses:
+        '200':
+          description: OK
+
+  # ---------------- Frontend Usage (BFF) ----------------
   /bff/transactions:
     get:
       tags: [Frontend Usage]
       summary: (Consumir) Listar transações
+      security: [{ bearerAuth: [] }]
       responses:
         '200':
           description: Lista de transações
@@ -26,9 +56,11 @@ paths:
               schema:
                 type: array
                 items: { $ref: '#/components/schemas/Transaction' }
+        '401': { description: Usuário ausente }
     post:
       tags: [Frontend Usage]
       summary: (Consumir) Criar transação
+      security: [{ bearerAuth: [] }]
       requestBody:
         required: true
         content:
@@ -40,64 +72,71 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Transaction' }
+        '400': { description: Payload inválido }
+        '401': { description: Usuário ausente }
+
   /bff/transactions/{id}:
     delete:
       tags: [Frontend Usage]
       summary: (Consumir) Remover transação
+      security: [{ bearerAuth: [] }]
       parameters:
         - in: path
           name: id
           required: true
           schema: { type: string }
       responses:
-        '200':
-          description: Removida
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  ok: { type: boolean }
+        '200': { description: Removida }
+        '404': { description: Não encontrada }
+        '401': { description: Usuário ausente }
+
   /bff/report:
     post:
       tags: [Frontend Usage]
-      summary: (Consumir) Gerar relatório OpenAI
+      summary: (Consumir) Gerar relatório (OpenAI)
+      security: [{ bearerAuth: [] }]
       responses:
         '200':
-          description: Relatório textual
+          description: OK
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  report: { type: string }
+              schema: { $ref: '#/components/schemas/ReportGenerateResponse' }
+        '429': { description: Limite mensal atingido }
+        '401': { description: Usuário ausente }
+
   /bff/reports:
     get:
       tags: [Frontend Usage]
       summary: (Consumir) Listar relatórios
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10, minimum: 1, maximum: 50 }
       responses:
         '200':
           description: Página de relatórios
           content:
             application/json:
-              schema:
-                type: object
-                properties:
-                  items:
-                    type: array
-                    items: { $ref: '#/components/schemas/Report' }
-                  page: { type: integer }
-                  limit: { type: integer }
+              schema: { $ref: '#/components/schemas/ReportListResponse' }
+        '401': { description: Usuário ausente }
+
   /bff/reports/quota:
     get:
       tags: [Frontend Usage]
       summary: (Consumir) Consultar quota de relatórios
+      security: [{ bearerAuth: [] }]
       responses:
         '200':
           description: Quota
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ReportQuota' }
+        '401': { description: Usuário ausente }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -105,39 +144,72 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
-    Transaction:
-      type: object
-      properties:
-        _id: { type: string }
-        userId: { type: string }
-        name: { type: string }
-        type: { type: string }
-        category: { type: string }
-        paymentMethod: { type: string }
-        amount: { type: number }
-        date: { type: string, format: date-time }
     TransactionCreate:
       type: object
-      required: [userId, name, type, category, paymentMethod, amount]
+      required: [name, amount, type, category, paymentMethod]
       properties:
-        userId: { type: string }
-        name: { type: string }
-        type: { type: string }
-        category: { type: string }
-        paymentMethod: { type: string }
-        amount: { type: number }
-        date: { type: string, format: date-time }
-    Report:
+        name: { type: string, example: "Almoço" }
+        amount: { type: number, example: 45.9 }
+        type:
+          type: string
+          enum: [Despesa, Depósito, Investimento]
+          example: "Despesa"
+        category:
+          type: string
+          enum: [Educação, Entretenimento, Alimentação, Saúde, Moradia, Outros, Salário, Transporte, Utilidades]
+          example: "Alimentação"
+        paymentMethod:
+          type: string
+          enum: [Transferência Bancária, Boleto Bancário, Dinheiro, Cartão de Crédito, Cartão de Débito, Outros, Pix]
+          example: "Pix"
+        date:
+          type: string
+          format: date
+          example: "2025-11-10"
+    Transaction:
       type: object
       properties:
         id: { type: string }
         userId: { type: string }
+        name: { type: string }
+        amount: { type: number }
+        type: { type: string }
+        category: { type: string }
+        paymentMethod: { type: string }
+        date: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ReportGenerateResponse:
+      type: object
+      properties:
+        report: { type: string }
+    ReportItem:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        createdAt: { type: string, format: date-time }
         title: { type: string }
         msg: { type: string }
-        createdAt: { type: string, format: date-time }
+    ReportListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReportItem' }
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
     ReportQuota:
       type: object
       properties:
         limit: { type: integer }
         used: { type: integer }
         remaining: { type: integer }
+    BuildConfig:
+      type: object
+      properties:
+        VITE_BFF_URL: { type: string, description: "URL base do BFF" }
+        VITE_CLERK_PUBLISHABLE_KEY: { type: string }
+        VITE_STRIPE_PUBLISHABLE_KEY: { type: string }
+        NODE_ENV: { type: string }

@@ -6,7 +6,8 @@ import cors from "cors";
 import bodyParser from "body-parser";
 import dotenv from "dotenv";
 // import swaggerUi from "swagger-ui-express";
-import { buildAppContainer } from "./src/composition/root.js";
+// import { buildAppContainer } from "./features/transactions/composition/root.js";
+import { buildAppContainer } from "./features/transactions/composition/root.js";
 
 dotenv.config();
 const PORT = process.env.PORT || 4100;
@@ -41,3 +42,62 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, () => {
   console.log(`Transactions service (clean) listening on ${PORT}`);
 });
+
+// // Index simples em ES Modules preservando funcionalidade anterior.
+// // Usa a facade da vertical slice (buildTransactionsContainer + transactionsRouter).
+
+// import express from "express";
+// import mongoose from "mongoose";
+// import morgan from "morgan";
+// import cors from "cors";
+// import bodyParser from "body-parser";
+// import dotenv from "dotenv";
+
+// import {
+//   buildTransactionsContainer,
+//   transactionsRouter
+// } from "./features/transactions/index.js";
+
+// dotenv.config();
+
+// const PORT = process.env.PORT || 4100;
+// const MONGO_URI = process.env.MONGO_URI;
+
+// const app = express();
+// app.use(cors());
+// app.use(bodyParser.json({ limit: "2mb" }));
+// app.use(morgan("dev"));
+
+// if (!MONGO_URI) {
+//   console.warn("MONGO_URI not configured.");
+// } else {
+//   mongoose
+//     .connect(MONGO_URI, {
+//       maxPoolSize: 10,
+//       serverSelectionTimeoutMS: 8000
+//     })
+//     .then(() => console.log("MongoDB connected (transactions-service vertical slice)"))
+//     .catch((err) => console.error("Mongo connection error:", err.message));
+// }
+
+// // Monta container + router
+// const container = buildTransactionsContainer();
+// app.use("/transactions", transactionsRouter(container));
+
+// // Rota de seed (mantida como no modelo antigo)
+// if (container.controller?.seed) {
+//   app.post("/internal/seed", (req, res) => container.controller.seed(req, res));
+// }
+
+// // Health
+// app.get("/health", (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
+
+// // Error handler
+// app.use((err, _req, res, _next) => {
+//   console.error("Unhandled:", err);
+//   res.status(500).json({ error: "internal_error", message: err.message });
+// });
+
+// app.listen(PORT, () => {
+//   console.log(`Transactions service (vertical slice clean) listening on ${PORT}`);
+// });

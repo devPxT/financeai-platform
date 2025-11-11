@@ -1,19 +1,18 @@
 openapi: 3.0.3
 info:
   title: Analytics Service
-  version: 1.0.0
+  version: 1.0.1
   description: |
-    Microserviço de relatórios e quota de geração de relatórios (persistência em Azure SQL).
+    Microserviço de relatórios (histórico das respostas IA) + quota mensal.
+    Persistência: Azure SQL (tabela dbo.Reports).
 servers:
+  - url: https://financeaianalytics-a6gdf8dyhwdyhnd0.canadacentral-01.azurewebsites.net
+    description: Produção
   - url: http://localhost:4200
     description: Local Dev
 tags:
   - name: Reports
-    description: CRUD básico de relatórios (criação e listagem)
   - name: Quota
-    description: Consultas de uso mensal
-security:
-  - bearerAuth: []
 paths:
   /reports:
     get:
@@ -26,10 +25,10 @@ paths:
           schema: { type: string }
         - in: query
           name: page
-          schema: { type: integer, minimum: 1, default: 1 }
+          schema: { type: integer, default: 1, minimum: 1 }
         - in: query
           name: limit
-          schema: { type: integer, minimum: 1, maximum: 50, default: 10 }
+          schema: { type: integer, default: 10, minimum: 1, maximum: 50 }
       responses:
         '200':
           description: Página de relatórios
@@ -43,12 +42,9 @@ paths:
                   limit: { type: integer }
                   items:
                     type: array
-                    items:
-                      $ref: '#/components/schemas/Report'
-        '400':
-          description: missing_userId
-        '500':
-          description: Erro de listagem
+                    items: { $ref: '#/components/schemas/Report' }
+        '400': { description: missing_userId }
+        '500': { description: create/list failure }
     post:
       tags: [Reports]
       summary: Criar relatório
@@ -56,19 +52,15 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: '#/components/schemas/ReportCreate'
+            schema: { $ref: '#/components/schemas/ReportCreate' }
       responses:
         '201':
           description: Criado
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/Report'
-        '400':
-          description: missing_userId_or_msg
-        '500':
-          description: create_failed
+              schema: { $ref: '#/components/schemas/Report' }
+        '400': { description: missing_userId_or_msg }
+        '500': { description: create_failed }
   /reports/quota:
     get:
       tags: [Quota]
@@ -80,21 +72,13 @@ paths:
           schema: { type: string }
       responses:
         '200':
-          description: Informações de quota
+          description: Quota
           content:
             application/json:
-              schema:
-                $ref: '#/components/schemas/ReportQuota'
-        '400':
-          description: missing_userId
-        '500':
-          description: failure
+              schema: { $ref: '#/components/schemas/ReportQuota' }
+        '400': { description: missing_userId }
+        '500': { description: failure }
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
   schemas:
     Report:
       type: object

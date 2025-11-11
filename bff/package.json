@@ -18,6 +18,7 @@
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.2.0",
     "morgan": "^1.10.1",
+    "nats": "^2.29.3",
     "node-cache": "^5.1.2",
     "openai": "^6.7.0",
     "stripe": "^19.1.0",

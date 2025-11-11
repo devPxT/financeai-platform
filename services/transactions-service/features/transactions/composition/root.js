@@ -8,6 +8,8 @@ import { seedTransactionsUseCase } from "../application/useCases/seedTransaction
 import { buildTransactionsController } from "../interface/http/transactionsController.js";
 import { buildTransactionsRoutes } from "../interface/http/transactionsRoutes.js";
 
+// import { listTransactionsUseCase } from "../application/useCases/listTransactionsUseCase.js";
+
 export function buildAppContainer() {
   const repository = new MongooseTransactionRepository();
   const useCases = {

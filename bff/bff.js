@@ -28,6 +28,7 @@ import bodyParser from "body-parser";
 import winston from "winston";
 import crypto from "crypto";
 import { clerkClient } from "@clerk/clerk-sdk-node";
+// import { createTransactionEDA } from "./routes/transactions.eda.js";
 
 dotenv.config();
 
@@ -313,6 +314,7 @@ app.post("/bff/transactions", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "create_transaction_failed", details: err.message });
   }
 });
+// app.post("/bff/transactions", authMiddleware, createTransactionEDA);
 
 /* UPDATE via Function */
 app.put("/bff/transactions/:id", authMiddleware, async (req, res) => {
@@ -381,25 +383,6 @@ app.delete("/bff/transactions/:id", authMiddleware, async (req, res) => {
     res.status(r.status || 200).json(r.data);
   } catch (err) {
     res.status(500).json({ error: "delete_transaction_failed", details: err.message });
-  }
-});
-
-/* COMBINED KPIs: call transactions summary + analytics service KPIs */
-/* COMBINED-KPI (se existir a sua rota de KPI combinado; aplica a mesma regra de userId) */
-app.get("/bff/combined-kpi", authMiddleware, async (req, res) => {
-  try {
-    const tokenUserId = deriveUserId(req.user);
-    const userId = MOCK_AUTH ? (req.query.userId || tokenUserId) : tokenUserId;
-    if (!userId) return res.status(401).json({ error: "missing_user_id_from_token" });
-
-    const kpisUrl = `${ANALYTICS_SERVICE_URL}/kpis`;
-    const [kpis] = await Promise.all([
-      proxyGet(kpisUrl, { userId }).catch(() => ({ error: "analytics_unavailable" }))
-    ]);
-
-    res.json({ userId, kpis });
-  } catch (err) {
-    res.status(500).json({ error: "combined_kpi_failed", details: err.message });
   }
 });
 
