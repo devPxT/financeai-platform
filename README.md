@@ -190,7 +190,6 @@ features/
     interface/
       http/                 # Controllers, rotas e DTOs de entrada/saída
     composition/            # Wiring/DI manual (repos -> useCases -> controller)
-    index.js                # Facade: buildTransactionsContainer + transactionsRouter
 ```
 
 - Dependências “apontam para dentro”: interface → application → domain.  
