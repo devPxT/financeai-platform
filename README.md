@@ -11,6 +11,11 @@ Alunos
 
 ---
 
+## Docker
+- https://hub.docker.com/repositories/devpxt
+
+---
+
 ## 1) Visão Geral do Sistema
 
 A plataforma é composta por:
