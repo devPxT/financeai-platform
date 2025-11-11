@@ -1,302 +1,251 @@
-# FinanceAI — Monorepo (MFE + BFF + Microservices + Azure Functions)
+# FinanceAI Platform — Visão Arquitetural do Código-Fonte
 
-**Alunos:** Arthur Hermes, Augusto Sinja, Eduardo Mesquita, Kauã Gabriel, Ricardo Amaro
+Este documento descreve a arquitetura do código-fonte da plataforma FinanceAI, cobrindo a visão do sistema, os componentes (MFE, BFF/API Gateway, Microservices, Azure Functions), integrações externas e os padrões aplicados (Clean Architecture, Vertical Slices e testes de arquitetura).
 
-> Repositório monolítico contendo: Micro Frontend (React/Vite), Backend-for-Frontend (Node/Express), dois microservices (Transactions — MongoDB Atlas; Analytics — Azure SQL), e duas Azure Functions (createTransaction, functionContext). Projetado para desenvolvimento local e deploy em nuvem.
-
----
-
-## GitHub e Docker
-
-* https://github.com/devPxT/financeai-platform
-* https://hub.docker.com/repositories/devpxt
+Alunos
+- Arthur Hermes
+- Augusto Sinja
+- Eduardo Mesquita
+- Kauã Gabriel
+- Ricardo Amaro
 
 ---
 
-## Estrutura do repositório
+## 1) Visão Geral do Sistema
 
+A plataforma é composta por:
+- MFE (Micro Frontend) em React/Vite.
+- BFF (Backend-for-Frontend) atuando também como API Gateway.
+- Dois microserviços independentes com “database per service”:
+  - Transactions Service (MongoDB).
+  - Analytics Service (Azure SQL).
+- Azure Functions para operações mutacionais de transações (create/update/delete).
+- Integrações externas: Stripe (checkout/assinatura) e OpenAI (relatórios com IA).
+
+Serviços em produção (referência):
+- MFE: https://financeai-f7erachbaqgfhubs.canadacentral-01.azurewebsites.net
+- BFF/API Gateway: https://financeaibff-e4frhjfnadhybtfy.canadacentral-01.azurewebsites.net
+- Transactions Functions (base /api): https://transactions-gnghafepbpd9cuat.canadacentral-01.azurewebsites.net/api
+- Transactions Service: https://financeaitransactions-djaggnewe5d6agah.canadacentral-01.azurewebsites.net
+- Analytics Service: https://financeaianalytics-a6gdf8dyhwdyhnd0.canadacentral-01.azurewebsites.net
+
+Arquitetura em alto nível:
 ```
-financeai-platform/
-├─ mfe/                      # Microfrontend (React + Vite)
-├─ bff/                      # Backend-for-Frontend (Express)
-├─ services/
-│  ├─ transactions-service/  # Microservice 1 (Node + MongoDB Atlas)
-│  └─ analytics-service/     # Microservice 2 (Node + Azure SQL)
-├─ functions/                # Azure Functions (createTransaction, functionContext)
-├─ docker-compose.yml        # Opcional: ambiente dev com containers (mongo, mssql, ...)
-└─ README.md                 # Este arquivo
-```
-
----
-
-# Rápido — requisitos e ferramentas
-
-* Node.js (recomendado **v18 LTS** para máxima compatibilidade com Azure libs; se usar Node 22, alguns pacotes podem emitir `EBADENGINE` warnings)
-* npm (ou pnpm/yarn)
-* Docker (opcional, para levantar Mongo / SQL local rapidamente)
-* Azure CLI / Azure Functions Core Tools (se for testar funções localmente)
-* Conta MongoDB Atlas (free) e Azure SQL (ou container mssql para dev)
-* Conta Clerk (opcional em dev, pode usar token `demo`) e Stripe (para checkout)
-* (Opcional) Stripe CLI para testar webhooks
-
----
-
-# 1) Como configurar (arquivo por arquivo)
-
-> Antes de rodar, crie um `.env` a partir de `.env.example` em cada serviço e preencha os valores reais.
-
-## 1.1 BFF — `/bff/.env`
-
-Exemplo mínimo (dev):
-
-```
-PORT=4000
-NODE_ENV=development
-MOCK_AUTH=true
-CLERK_JWKS_URI=
-CLERK_AUDIENCE=
-OPENAI_API_KEY=
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-TRANSACTIONS_SERVICE_URL=http://localhost:4100
-ANALYTICS_SERVICE_URL=http://localhost:4200
-FUNCTION_TRIGGER_URL=http://localhost:4300
-INTERNAL_SECRET=change-me-in-prod
-HTTP_TIMEOUT_MS=8000
-RETRY_COUNT=2
-CACHE_TTL=25
-```
-
-* Em **dev** você pode manter `MOCK_AUTH=true` (aceita token `demo`).
-* Em **produção** definir `MOCK_AUTH=false` e configurar `CLERK_JWKS_URI` e `CLERK_AUDIENCE` (valores fornecidos pelo Clerk).
-* **Não** coloque chaves reais no Git; use GitHub Secrets / Azure Key Vault em deploy.
-
-## 1.2 Transactions Service — `/services/transactions-service/.env`
-
-```
-PORT=4100
-NODE_ENV=development
-MONGO_URI=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/financeai_transactions?retryWrites=true&w=majority
-INTERNAL_SECRET=change-me-in-prod
-```
-
-* Substitua `<user>`, `<password>`, `<cluster>` com os valores do Atlas.
-* Em dev rápido você pode usar `MONGO_URI=mongodb://localhost:27017/financeai_transactions` apontando a um container Mongo local.
-
-## 1.3 Analytics Service — `/services/analytics-service/.env`
-
-```
-PORT=4200
-AZURE_SQL_SERVER=<your_server>.database.windows.net
-AZURE_SQL_DATABASE=financeai_analytics
-AZURE_SQL_USER=<user>
-AZURE_SQL_PASSWORD=<password>
-AZURE_SQL_PORT=1433
-INTERNAL_SECRET=change-me-in-prod
-```
-
-* Para dev local, é comum usar um container mssql (sa password) e ajustar variáveis para apontar para ele.
-
-## 1.4 Functions — `/functions/local.settings.json`
-
-(arquivo local — **do not commit**)
-
-```json
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "node",
-    "TRANSACTIONS_SERVICE_URL": "http://localhost:4100",
-    "ANALYTICS_SERVICE_URL": "http://localhost:4200"
-  }
-}
-```
-
-## 1.5 MFE — `/mfe/.env`
-
-```
-VITE_BFF_URL=http://localhost:4000
-VITE_CLERK_PUBLISHABLE_KEY=
-VITE_STRIPE_PUBLISHABLE_KEY=
-VITE_DEMO_USER_TOKEN=demo
-```
-
-* `VITE_DEMO_USER_TOKEN=demo` permite usar o BFF em modo mock sem Clerk.
-
----
-
-# 2) Instalação passo-a-passo (local, sem Docker)
-
-Abra terminais separados (um por serviço). A sequência abaixo assume que você está no diretório raiz `financeai-platform`.
-
-1. MicroFrontEnd (MFE):
-
-```bash
-cd mfe
-npm install
-npm run dev
-# dev server roda em http://localhost:3000
-```
-
-2. BFF:
-
-```bash
-cd ../bff
-npm install
-# Windows: se package.json usa NODE_ENV=... instale cross-env (dev) ou rode node diretamente
-npm run dev   # se usa cross-env
-# ou: node bff.js
-# BFF roda em http://localhost:4000
-```
-
-3. Transactions Service (Mongo):
-
-```bash
-cd ../services/transactions-service
-npm install
-# ajuste MONGO_URI no .env (Atlas ou localhost)
-npm run dev
-# serviço roda em http://localhost:4100
-```
-
-4. Analytics Service (Azure SQL):
-
-```bash
-cd ../services/analytics-service
-npm install
-# ajuste AZURE_SQL_* no .env
-npm run dev
-# serviço roda em http://localhost:4200
-```
-
-5. Functions (local):
-
-```bash
-cd ../../functions
-npm install
-# instale e rode Azurite (opcional) ou configure AzureWebJobsStorage
-func start
-# functions expostas em http://localhost:7071/api/{functionName}
+[MFE] → [BFF/API Gateway] → (Reads) → [Transactions Service (Mongo)]
+                         └─ (Writes via HTTP) → [Azure Functions] → [Mongo]
+                         └─ (Relatórios) → [OpenAI] + [Analytics Service (Azure SQL)]
+                         └─ (Pagamentos) → [Stripe (Checkout/Webhook)]
 ```
 
 ---
 
-# 3) Instalação com Docker Compose (dev rápido)
+## 2) MFE (Micro Frontend)
 
-Há um `docker-compose.yml` opcional para levantar Mongo e MSSQL localmente e rodar containers para os serviços. Em raiz do repo:
+- SPA construída com React + Vite.
+- Consome exclusivamente o BFF, que abstrai e consolida os backends.
+- Configurações por variáveis de ambiente de build (ex.: `VITE_BFF_URL`, chaves publishable de Clerk/Stripe).
+- Principais operações consumidas no BFF:
+  - GET /bff/transactions — listar transações.
+  - POST /bff/transactions — criar transação.
+  - PUT /bff/transactions/{id} — atualizar transação.
+  - DELETE /bff/transactions/{id} — remover transação.
+  - POST /bff/report — gerar relatório (OpenAI) e persistir.
+  - GET /bff/reports — listar relatórios.
+  - GET /bff/reports/quota — consultar cota de relatórios.
+- Benefícios:
+  - MFE não precisa conhecer a topologia dos serviços internos.
+  - Evolui independente de mudanças em microserviços/integradores.
 
-```bash
-docker compose up -d
+---
+
+## 3) BFF com API Gateway integrada
+
+- Implementado em Node.js/Express.
+- Atua como fachada única para o MFE (padrão BFF) e cumpre funções típicas de API Gateway:
+  - Autenticação (Clerk em produção; mock em dev, quando habilitado).
+  - Sanitização/validação de payloads.
+  - Rate limiting, CORS, Helmet (hardening), cache básico (quando aplicável).
+  - Retry com backoff nas chamadas a serviços/Functions.
+  - Observabilidade (logs estruturados; eventos nomeados).
+- Integrações:
+  - Stripe: criação de sessão de checkout e verificação de assinatura no webhook.
+  - OpenAI: geração de relatórios em PT‑BR a partir das últimas transações do usuário.
+- Orquestração:
+  - Leituras de transações: chamadas REST ao Transactions Service.
+  - Escritas de transações: chamadas HTTP às Azure Functions (write path).
+  - Relatórios: coleta transações → chama OpenAI → persiste no Analytics Service.
+- Segurança:
+  - Tokens/JWT via Clerk no BFF.
+  - Secrets/keys em variáveis de ambiente.
+  - Webhook do Stripe com verificação de assinatura.
+  - Chave de Function via query `?code=` ou header `x-functions-key`.
+
+---
+
+## 4) Eventos HTTP do BFF para Functions
+
+As operações mutacionais de transações são encaminhadas pelo BFF para Azure Functions:
+
+- POST /api/createTransactions
+  - Cabeçalho: `x-user-id` (ou `userId` no body).
+  - Valida campos obrigatórios (name, type, category, paymentMethod, amount, date opcional).
+  - Retorno 201 com a transação persistida.
+
+- PUT /api/updateTransactions/{id}
+  - Cabeçalho: `x-user-id` obrigatório.
+  - Atualiza campos permitidos (name, amount, type, category, paymentMethod, date).
+  - Retorno 200 com o documento atualizado; 404 caso não encontrado.
+
+- DELETE /api/deleteTransactions/{id}
+  - Cabeçalho: `x-user-id` obrigatório.
+  - Remove a transação pertencente ao usuário; 404 caso não encontrada.
+
+Autorização de Functions:
+- Nível “function”: chave via `?code=` (query) ou `x-functions-key` (header), configurada no BFF.
+
+Resiliência:
+- Retries com backoff quando a falha é transitória (ex.: timeouts; não tentamos novamente erros 4xx exceto 429).
+- Logs de erro com contexto (corrId, endpoint, status).
+
+---
+
+## 5) Microservices com Database per Service
+
+### 5.1 Transactions Service (MongoDB)
+- Responsável pelo CRUD de transações do usuário.
+- Exemplo de endpoints:
+  - GET /transactions (filtros: userId, período, limite)
+  - POST /transactions
+  - PUT /transactions/{id}
+  - DELETE /transactions/{id}
+  - GET /transactions/summary (agregados simples)
+- Persistência: MongoDB (cada transação com userId, name, type, category, paymentMethod, amount, date, createdAt, updatedAt).
+- Conexão: `MONGO_URI` via variável de ambiente; pooling e `serverSelectionTimeoutMS`.
+- Padrões de validação: coerção de datas/valores e saneamento no BFF; consistência reforçada no serviço.
+- Observação: no caminho de escrita em produção, o BFF utiliza as Azure Functions; o serviço fica focado em leituras e eventuais usos administrativos.
+
+### 5.2 Analytics Service (Azure SQL)
+- Responsável por relatórios gerados via IA e controle de cota (quota) mensal.
+- Endpoints:
+  - GET /reports?userId=...&page=...&limit=...
+  - POST /reports
+  - GET /reports/quota?userId=...
+- Persistência: Azure SQL (tabela dbo.Reports; índices para consulta por userId/data).
+- Padrões aplicados:
+  - Repository Pattern (p. ex., `SqlReportRepository`) para isolar acesso a dados.
+  - Modelos enxutos para transportar dados entre camadas.
+
+Motivação do “Database per Service”:
+- Autonomia e independência de evolução por domínio.
+- Escalabilidade e isolamento de falhas.
+- Flexibilidade de escolher o storage ideal por contexto (NoSQL para transações; relacional para relatórios e quota).
+
+---
+
+## 6) Conexões entre Componentes
+
+- MFE → BFF: chamadas HTTP autenticadas; o MFE nunca fala direto com microserviços.
+- BFF → Transactions Service: leituras (lista/resumo) via REST.
+- BFF → Azure Functions (Transactions): escritas (create/update/delete) via HTTP com chave de função.
+- BFF → OpenAI: geração de conteúdo do relatório.
+- BFF → Analytics Service: gravação e leitura de relatórios/quota.
+- Stripe:
+  - BFF → Stripe: criação de sessão de checkout.
+  - Stripe → BFF: webhook assinado para eventos de pagamento/assinatura.
+
+---
+
+## 7) Azure Functions (Transações)
+
+- Implementadas em Node.js, com triggers HTTP:
+  - createTransactions (POST)
+  - updateTransactions/{id} (PUT)
+  - deleteTransactions/{id} (DELETE)
+- Autorização “function” por chave.
+- Cabeçalhos: `x-user-id` obrigatório para update/delete (e recomendado para create).
+- Regras de validação e normalização de dados alinhadas ao BFF.
+- Benefícios:
+  - Escala independente para picos de escrita.
+  - Simples de compor com um futuro barramento de eventos (EDA) se necessário.
+
+---
+
+## 8) Padrões Arquiteturais: Clean Architecture + Vertical Slices
+
+A base do código dos microserviços segue Clean Architecture e está organizada em Vertical Slices por domínio de negócio (ex.: `features/transactions`):
+
+Estrutura típica por fatia (ex.: transactions-service)
+```
+features/
+  transactions/
+    domain/                 # Entidades, regras de negócio puras
+    application/
+      useCases/             # Orquestram regras (input -> domínio -> saída)
+    infrastructure/         # Adapters concretos (Mongo/Azure SQL)
+    interface/
+      http/                 # Controllers, rotas e DTOs de entrada/saída
+    composition/            # Wiring/DI manual (repos -> useCases -> controller)
+    index.js                # Facade: buildTransactionsContainer + transactionsRouter
 ```
 
-* Ajuste `docker-compose.yml` se quiser mapear volumes ou alterar senhas.
+- Dependências “apontam para dentro”: interface → application → domain.  
+- Domínio não conhece infraestrutura nem interface.
+- Application não conhece infraestrutura/transportes; depende de contratos (interfaces).
+- Composition faz a injeção (repository concreto → use cases → controller).
+
+Benefícios:
+- Coesão por feature (tudo de “transações” está junto).
+- Facilidade de evolução e testes.
+- Baixo acoplamento entre domínios e camadas.
 
 ---
 
-# 4) Testes básicos e endpoints
+## 9) Testes de Arquitetura dos Microserviços
 
-* MFE: [http://localhost:3000](http://localhost:3000)
-* BFF health: `GET http://localhost:4000/bff/health`
-* BFF aggregate: `GET http://localhost:4000/bff/aggregate` (precisa header Authorization: Bearer demo em modo mock)
-* Transactions: `GET http://localhost:4100/transactions` / `POST /transactions`
-* Analytics KPIs: `GET http://localhost:4200/kpis`
-* Functions: `POST http://localhost:7071/api/createTransaction` and `GET http://localhost:7071/api/functionContext`
+São usados testes de arquitetura para garantir as regras de dependência e a aderência ao desenho:
 
-**Exemplo curl (modo mock)**
+- Regras verificadas (exemplos):
+  - domain não depende de interface nem de infrastructure.
+  - application não depende de interface nem de infrastructure.
+  - interface não depende de infrastructure.
+  - domain e application livres de ciclos.
+- Teste de Vertical Slice:
+  - Aderência a um diagrama de componentes (PlantUML) que define setas permitidas:
+    - A (application) → D (domain)
+    - I (infrastructure) → A e D
+    - F (interface) → A
+- Smoke tests:
+  - Garantem importabilidade das camadas essenciais e composição básica.
 
-```bash
-curl -H "Authorization: Bearer demo" http://localhost:4000/bff/aggregate
-```
-
----
-
-# 5) Autenticação (Clerk) e fluxos com Stripe / OpenAI
-
-**Dev rápido (modo mock)**
-
-* Mantenha `bff/.env: MOCK_AUTH=true` e `mfe/.env: VITE_DEMO_USER_TOKEN=demo`.
-* O frontend usará `demo` como token e o BFF aceitará esse token.
-
-**Produção (recomendado)**
-
-1. Crie app no Clerk, copie JWKS URI / Audience.
-2. No `bff/.env` coloque `MOCK_AUTH=false`, `CLERK_JWKS_URI=...` e `CLERK_AUDIENCE=...`.
-3. No MFE configure `VITE_CLERK_PUBLISHABLE_KEY` e use os componentes Clerk para login.
-
-**Stripe**
-
-* O BFF expõe `POST /bff/create-checkout-session` (servidor) e `POST /bff/stripe-webhook` (webhook). Configure `STRIPE_SECRET_KEY` e `STRIPE_WEBHOOK_SECRET` no BFF.
-* Use Stripe Dashboard ou Stripe CLI para testar webhooks.
-
-**OpenAI**
-
-* Configure `OPENAI_API_KEY` no BFF (`bff/.env`). O endpoint `/bff/report` chama a OpenAI e retorna o relatório.
+Esses testes ajudam a manter o design limpo ao longo do tempo, evitando “curto-circuitos” entre camadas (ex.: controller importando repositório direto) e reduzindo riscos de dívida técnica.
 
 ---
 
-# 6) Seeds, testes e utilitários
+## 10) Decisões e Qualidades
 
-* Seeds: endpoints internos `/internal/seed` (protegidos por `INTERNAL_SECRET`) existem em services e podem popular dados de demo:
-
-```bash
-curl -X POST -H "x-internal-secret: change-me-in-prod" http://localhost:4100/internal/seed
-curl -X POST -H "x-internal-secret: change-me-in-prod" http://localhost:4200/internal/seed
-```
-
-* Logs: veja saídas nos terminais de cada serviço. BFF usa `winston`/`morgan` e imprimirá requests e erros.
+- BFF como API Gateway: simplifica o front e centraliza políticas transversais (auth, rate limit, cache, observabilidade).
+- Database per service: autonomia de dados e escolha de storage adequado por domínio.
+- Resiliência: retries com backoff, degradação graciosa (quota/relatórios), verificação de assinaturas (Stripe).
+- Doze fatores: configuração via variáveis de ambiente; componentes implantáveis separadamente.
+- Evolutividade: vertical slices e repositórios desacoplados permitem novas features/domínios com pouco impacto cruzado.
 
 ---
 
-# 7) Troubleshooting rápido (erros comuns)
+## 11) Principais Integrações Externas
 
-* `ERR_CONNECTION_REFUSED` no MFE console: significa que o BFF não está rodando em `VITE_BFF_URL` (cheque `node bff.js` terminal). Rodar/checar `netstat -ano | findstr :4000`.
-* `'NODE_ENV' não é reconhecido` no Windows: instale `cross-env` e troque o script para `cross-env NODE_ENV=development node bff.js` ou rode `node bff.js` diretamente.
-* `EBADNAME _mongodb._tcp.<cluster>.mongodb.net`: seu `MONGO_URI` ainda tem placeholders (`<cluster>`). Substitua pelo URI real do Atlas ou aponte para Mongo local.
-* `invalid_mock_token` 401: frontend enviou token Clerk real, enquanto BFF está em `MOCK_AUTH=true`. Em dev use `VITE_DEMO_USER_TOKEN=demo` no MFE ou desligue mock no BFF e configure Clerk.
-* Stripe webhook: use Stripe CLI `stripe listen --forward-to localhost:4000/bff/stripe-webhook` para testar local.
-
----
-
-# 8) Deploy & produção (resumo)
-
-1. **BFF**: deploy em Azure App Service / Azure Container Apps / any Node host. Configure env vars, OpenAI key, Stripe keys, Clerk JWKS.
-2. **Transactions service**: host onde puder acessar MongoDB Atlas (use VNet/Private Endpoint for production).
-3. **Analytics service**: Azure SQL — configure firewall rules, use managed identity if preferred.
-4. **Functions**: deploy com `func azure functionapp publish` ou via GitHub Actions.
-5. **CI/CD**: usar GitHub Actions — build and test each package, publish containers or deploy to Azure.
-
-Segurança: use HTTPS, configure CORS de forma restrita, não deixe `INTERNAL_SECRET` no Git, e use Key Vault / GitHub Secrets.
+- Stripe:
+  - Checkout de assinatura (BFF → Stripe).
+  - Webhook assinado (Stripe → BFF) para refletir estado de pagamento.
+- OpenAI:
+  - Geração de relatório textual a partir das transações recentes do usuário.
+- Clerk:
+  - Autenticação com JWKS em produção (mock somente em desenvolvimento).
 
 ---
 
-# 9) Comandos úteis (cole e rode)
+## 12) Resumo
 
-```
-# raiz do repo
-# instalar deps em cada pacote (exemplo)
-cd mfe && npm install
-cd ../bff && npm install
-cd ../services/transactions-service && npm install
-cd ../services/analytics-service && npm install
-cd ../../functions && npm install
-
-# iniciar (em terminais separados)
-cd services/transactions-service && npm run dev
-cd services/analytics-service && npm run dev
-cd ../bff && npm run dev
-cd ../mfe && npm run dev
-cd ../functions && func start
-```
-
----
-
-## Autores
-
-* Arthur Hermes
-* Augusto Sinja
-* Eduardo Mesquita
-* Kauã Gabriel
-* Ricardo Amaro
-
----
+- O MFE consome somente o BFF, que serve como API Gateway e orquestrador.
+- Escritas de transação passam por Azure Functions; leituras vêm do Transactions Service (Mongo).
+- Relatórios são gerados com OpenAI e persistidos no Analytics Service (Azure SQL).
+- Clean Architecture + Vertical Slices estruturam o código dos microserviços, com testes de arquitetura garantindo a disciplina das dependências.

@@ -176,7 +176,7 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
     patch:
       tags: [Transactions]
-      summary: Atualizar transação (parcial)
+      summary: Atualizar transação
       description: "Semântica idêntica ao PUT; aceita PATCH por conveniência."
       security:
         - functionKeyQuery: []
